@@ -28,7 +28,7 @@ SOFTWARE.
 #include "html.h"
 
 #include "../Bricks/mq/inmemory/mq.h"
-#include "../Bricks/rtti/dispatcher.h"  // TODO(dkorolev): The right visitor.
+#include "../Bricks/template/metaprogramming.h"
 #include "../Bricks/graph/gnuplot.h"
 #include "../Bricks/dflags/dflags.h"
 
@@ -74,11 +74,9 @@ struct TimelineTitleEvent : TimelineEvent {
   std::string event;
   std::string title;
   TimelineTitleEvent() = delete;
-  TimelineTitleEvent(uint64_t ms, const std::string& event, const std::string& title) : TimelineEvent(ms), event(event), title(title) {
-  }
-  virtual std::string EventAsString() {
-    return event;
-  }
+  TimelineTitleEvent(uint64_t ms, const std::string& event, const std::string& title)
+      : TimelineEvent(ms), event(event), title(title) {}
+  virtual std::string EventAsString() { return event; }
   virtual std::string DetailsAsString() { return title; }
 };
 
@@ -197,17 +195,15 @@ struct Entry : Message {
       state.abscissa_min = std::min(state.abscissa_min, abscissa);
       state.abscissa_max = std::max(state.abscissa_min, abscissa);
 
-      if (e.fields.count("title")) { // && e.unparsable_fields.count("url")) {
+      if (e.fields.count("title")) {  // && e.unparsable_fields.count("url")) {
         std::cerr << "`" << e.device_id << "`, " << ms << " -> " << e.fields.find("title")->second << std::endl;
-        state.timeline[bricks::strings::ToLower(e.device_id)][ms].insert(
-            std::unique_ptr<TimelineEvent>(new TimelineTitleEvent(ms, e.event, e.fields.find("title")->second)));
+        state.timeline[bricks::strings::ToLower(e.device_id)][ms].insert(std::unique_ptr<TimelineEvent>(
+            new TimelineTitleEvent(ms, e.event, e.fields.find("title")->second)));
       }
     }
   };
   virtual void Process(State& state) {
-    MidichloriansEvent& e = *entry.get();
-    Processor processor(ms, state);
-    bricks::rtti::RuntimeTupleDispatcher<MidichloriansEvent, T_TYPES>::DispatchCall(e, processor);
+    bricks::metaprogramming::RTTIDynamicCall<T_TYPES>(*entry.get(), Processor(ms, state));
     state.IncrementCounter("entries_total");
   }
 };
