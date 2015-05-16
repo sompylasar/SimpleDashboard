@@ -269,25 +269,246 @@ struct Consumer {
 
 }  // namespace mq
 
-void RenderSearchBox(const std::string& q = "") {
+
+struct HtmlMaterializeTheme {
+  const std::string primary_color = "#64b5f6";
+  const std::string primary_color_class = "blue lighten-2";
+  
+  const std::string primary_color_lighten_10 = "#90caf9";
+  const std::string primary_color_lighten_20 = "#bbdefb";
+  
+  const std::string input_valid_color = "#00e676";
+  const std::string input_invalid_color = "#ff1744";
+};
+
+struct HtmlMaterializeBody {
+  HtmlMaterializeBody() {
+    using namespace html;
+    {
+      NAV nav({{"class", ThreadLocalSingleton<HtmlMaterializeTheme>().primary_color_class}});
+      {
+        DIV nav_wrapper({{"class", "nav-wrapper container"}});
+        {
+          A logo({{"class", "brand-logo"}, {"href", FLAGS_route + "/"}}, "MixBoard");
+        }
+      }
+    }
+    TEXT("<main>");
+  }
+  ~HtmlMaterializeBody() {
+    using namespace html;
+    TEXT("</main>");
+    {
+      FOOTER footer({{"class", "page-footer blue-grey darken-4"}});
+      {
+        DIV container({{"class", "container"}});
+        {
+          DIV copyright({{"class", "footer-copyright"}}, "&copy; 2015 MixBoard");
+        }
+      }
+    }
+  }
+};
+
+struct HtmlMaterializeSection {
+  html::SECTION section;
+  html::DIV container;
+  html::DIV row;
+  html::DIV col;
+  
+  HtmlMaterializeSection()
+    : section({{"class", "section no-pad-bot"}}),
+      container({{"class", "container"}}),
+      row({{"class", "row center"}, {"style", "margin-bottom: 0;"}}),
+      col({{"class", "col s12"}})
+  {}
+};
+
+void RenderHtmlHead(const std::string& title_text) {
   using namespace html;
   {
-    TABLE table({{"border", "0"}, {"align", "center"}});
-    TR r;
-    TD d({{"align", "center"}});
-    FORM form({{"align", "center"}});
-    INPUT input({{"type", "text"},
-                 {"style", "font-size:50px;text-align:center"},
-                 {"name", "q"},
-                 {"value", q},
-                 {"autocomplete", "off"}});
+    HEAD head;
+    META charset({{"charset", "utf-8"}});
+    META viewport({{"name", "viewport"}, {"content", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"}});
+    TITLE title(title_text);
+    LINK materializecss_style({{"rel", "stylesheet"}, {"href", "https://cdnjs.cloudflare.com/ajax/libs/materialize/0.96.1/css/materialize.min.css"}});
+    {
+      SCRIPT jquery({{"src", "https://code.jquery.com/jquery-2.1.1.min.js"}});
+    }
+    {
+      SCRIPT materializecss_script({{"src", "https://cdnjs.cloudflare.com/ajax/libs/materialize/0.96.1/js/materialize.min.js"}});
+    }
+    {
+      using namespace html;
+      auto& theme = ThreadLocalSingleton<HtmlMaterializeTheme>();
+      STYLE materializecss_overrides(
+        // Sticky footer.
+        "body {"
+        "  display: flex;"
+        "  min-height: 100vh;"
+        "  flex-direction: column;"
+        "}"
+        "main {"
+        "  flex: 1 0 auto;"
+        "}"
+        
+        // Input placeholder styles.
+        "::-webkit-input-placeholder {"
+        "  color: " + theme.primary_color_lighten_20 + ";"
+        "}"
+        ":-moz-placeholder { /* Firefox 18- */"
+        "  color: " + theme.primary_color_lighten_20 + ";"
+        "}"
+        "::-moz-placeholder {  /* Firefox 19+ */"
+        "  color: " + theme.primary_color_lighten_20 + ";"
+        "}"
+        ":-ms-input-placeholder {"
+        "  color: " + theme.primary_color_lighten_20 + ";"
+        "}"
+        
+        // Input styles.
+        "/* label color */"
+        ".input-field label {"
+        "  color: " + theme.primary_color + ";"
+        "}"
+        "/* label focus color */"
+        ".input-field input[type=text]:focus + label {"
+        "  color: " + theme.primary_color + ";"
+        "}"
+        "/* label underline focus color */"
+        ".input-field input[type=text]:focus {"
+        "  border-bottom: 1px solid " + theme.primary_color + ";"
+        "  box-shadow: 0 1px 0 0 " + theme.primary_color + ";"
+        "}"
+        "/* valid color */"
+          ".input-field input[type=text].valid {"
+        "  border-bottom: 1px solid " + theme.input_valid_color + ";"
+        "  box-shadow: 0 1px 0 0 " + theme.input_valid_color + ";"
+        "}"
+        "/* invalid color */"
+        ".input-field input[type=text].invalid {"
+        "  border-bottom: 1px solid " + theme.input_invalid_color + ";"
+        "  box-shadow: 0 1px 0 0 " + theme.input_invalid_color + ";"
+        "}"
+        "/* icon prefix focus color */"
+        ".input-field .prefix.active {"
+        "  color: " + theme.primary_color + ";"
+        "}"
+        
+        // Button styles.
+        ".btn, .btn-large {"
+        "  background-color: " + theme.primary_color + ";"
+        "}"
+        ".btn:hover, .btn-large:hover {"
+        "  background-color: " + theme.primary_color + ";"
+        "}"
+        "button:focus {"
+        "  background-color: " + theme.primary_color_lighten_10 + ";"
+        "}"
+        "button.btn-flat:focus {"
+        "  background-color: transparent;"
+        "  color: " + theme.primary_color + ";"
+        "}"
+        "button.btn-flat.waves-red:focus {"
+        "  background-color: #ffcdd2;"
+        "  color: #343434;"
+        "}"
+        
+        // Blockquote styles.
+        "blockquote {"
+        "  text-align: left;"
+        "}"
+      );
+    }
   }
-  TEXT("<br><br>");
 }
 
-void RenderImage() {
+void RenderSearchBoxSection(const std::string& q = "") {
   using namespace html;
-  IMG({{"src", "./mixboard.png"}});  //?x=" + r.url.query["x"] + "&y=" + r.url.query["y"]}});
+  HtmlMaterializeSection section;
+  const std::string input_id = "search-box";
+  FORM form({{"method", "get"}, {"onsubmit", "return !!this.elements['q'].value;"}});
+  {
+    DIV row({{"class", "row"}, {"style", "margin-bottom: 0;"}});
+    {
+      DIV col({{"class", "col s9"}});
+      {
+        DIV input_wrapper({{"class", "input-field"}});
+        INPUT input({{"type", "text"},
+                     {"id", input_id},
+                     {"style", "text-align: center; font-size: 3rem; height: 4rem;"},
+                     {"name", "q"},
+                     {"value", q},
+                     {"required", "required"},
+                     {"autocomplete", "off"}});
+        {
+          LABEL label({{"for", input_id}, {"style", "top: 1.2rem;"}}, "Search Sessions");
+        }
+      }
+    }
+    {
+      DIV col({{"class", "col s3"}});
+      {
+        BUTTON button({{"type", "submit"},
+                       {"class", "btn btn-large waves-effect waves-light"},
+                       {"style", "width: 100%; margin-top: 1rem;"}});
+        {
+          I icon({{"class", "mdi-action-search right"}});
+        }
+        {
+          SPAN text("Search");
+        }
+      }
+    }
+  }
+}
+
+void RenderErrorSection(const std::string& error_text = "") {
+  using namespace html;
+  HtmlMaterializeSection section;
+  BLOCKQUOTE error({{"class", "flow-text"}}, error_text);
+}
+
+void RenderImageSection() {
+  using namespace html;
+  HtmlMaterializeSection section;
+  // The tiniest transparent pixel image: http://stackoverflow.com/a/12483396 http://probablyprogramming.com/2009/03/15/the-tiniest-gif-ever
+  const std::string empty_image_url = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+  const std::string image_url = "./mixboard.png"; //?x=" + r.url.query["x"] + "&y=" + r.url.query["y"];
+  {
+    DIV image_container;
+    IMG({{"class", "responsive-img"},
+         {"src", image_url},
+         {"data-src", image_url},
+         {"onload",
+           // Sorry for the inline scripts. It's simpler for now. -- sompylasar
+           "if (this.src !== '" + empty_image_url + "') {"
+           "this.parentNode.lastChild.style.display='none';"
+           "}"
+         },
+         {"onerror",
+           // Sorry for the inline scripts. It's simpler for now. -- sompylasar
+           "this.src = '" + empty_image_url + "';"
+           "this.parentNode.lastChild.style.display='';"
+         }});
+    {
+      DIV image_error({{"style", "display: none;"}});
+      {
+        DIV image_error_message({{"class", "red-text"}}, "Couldn't load the image.");
+      }
+      {
+        BUTTON reload_button({
+            {"type", "button"},
+            {"class", "btn-flat waves-effect waves-red"},
+            {"onclick",
+              // Sorry for the inline scripts. It's simpler for now. -- sompylasar
+              "this.parentNode.parentNode.firstChild.src = this.parentNode.parentNode.firstChild.getAttribute('data-src');"
+              "this.blur();"
+              "return false;"
+            }}, "Reload");
+      }
+    }
+  }
 }
 
 std::string TimeIntervalAsString(uint64_t ms) {
@@ -333,12 +554,10 @@ int main(int argc, char** argv) {
   HTTP(FLAGS_port).Register(FLAGS_route + "/", [&immutable_state](Request r) {
     using namespace html;
     HTML html_scope;
-    {
-      HEAD head;
-      TITLE("MixBoard Status Page");
-    }
+    RenderHtmlHead("MixBoard Status Page");
     {
       BODY body;
+      HtmlMaterializeBody body_template;
 
       const std::string user_query = bricks::strings::ToLower(r.url.query["q"]);
 
@@ -372,53 +591,52 @@ int main(int argc, char** argv) {
         std::cerr << "[" << user_query << "] = `" << r << "`." << std::endl;
       }
 
-      RenderSearchBox(r.url.query["q"]);
+      RenderSearchBoxSection(r.url.query["q"]);
 
       if (search_results.empty()) {
-        RenderImage();
+        if (user_query.empty()) {
+          RenderImageSection();
+        }
+        else {
+          RenderErrorSection("No results for your search. Please try other keywords.");
+        }
       } else {
+        HtmlMaterializeSection section;
+        
         // TODO(dkorolev): UL/LI ?
-        TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
+        TABLE table;
         {
-          TR r({{"align", "center"}});
+          TR tr;
           {
-            TD d;
-            B("Name");
+            TH th("Name");
           }
           {
-            TD d;
-            B("Device ID");
+            TH th("Device ID");
           }
           {
-            TD d;
-            B("Client ID");
+            TH th("Client ID");
           }
           {
-            TD d;
-            B("Advertising ID");
+            TD th("Advertising ID");
           }
         }
         for (const auto did : search_results) {
           const auto record_cit = immutable_state.record.find(did);
           if (record_cit != immutable_state.record.end()) {
             const mq::Record& record = record_cit->second;
-            TR r({{"align", "center"}});
+            TR tr;
             {
-              TD d1;
-              A a({{"href", "browse?did=" + did}});
-              TEXT(record.name);
+              TD td;
+              A a({{"href", "browse?did=" + did}}, EscapeHtmlEntities(record.name));
             }
             {
-              TD d2;
-              TEXT(record.did);
+              TD td(EscapeHtmlEntities(record.did));
             }  // == lookup key
             {
-              TD d3;
-              TEXT(record.cid);
+              TD td(EscapeHtmlEntities(record.cid));
             }
             {
-              TD d4;
-              TEXT(record.aid);
+              TD td(EscapeHtmlEntities(record.aid));
             }
           } else {
             std::cerr << "Warning: No record for `" << did << "`." << std::endl;
@@ -442,14 +660,12 @@ int main(int argc, char** argv) {
 
       using namespace html;
       HTML html_scope;
-      {
-        HEAD head;
-        TITLE("Browse by device");
-      }
+      RenderHtmlHead("Browse by device");
       {
         BODY body;
+        HtmlMaterializeBody body_template;
 
-        RenderSearchBox();
+        RenderSearchBoxSection();
 
         const auto cit = immutable_state.timeline.find(did);
         if (cit != immutable_state.timeline.end()) {
@@ -458,20 +674,18 @@ int main(int argc, char** argv) {
 
           const uint64_t now = static_cast<uint64_t>(bricks::time::Now());
 
-          TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
+          HtmlMaterializeSection section;
+          TABLE table;
           {
-            TR r({{"align", "center"}});
+            TR tr;
             {
-              TD d;
-              B("Timestamp");
+              TH td("Timestamp");
             }
             {
-              TD d;
-              B("Event");
+              TH td("Event");
             }
             {
-              TD d;
-              B("Details");
+              TH td("Details");
             }
           }
           std::string previous = "";
@@ -480,26 +694,22 @@ int main(int argc, char** argv) {
               std::string current = single_event->EventAsString() + ' ' + single_event->DetailsAsString();
               if (current != previous) {
                 previous = current;
-                TR r({{"align", "center"}});
+                TR tr;
                 {
-                  TD d;
-                  TEXT(TimeIntervalAsString(now - time_cit->first) + " ago");
+                  TD td({{"data-timestamp", bricks::strings::ToString(time_cit->first)}}, TimeIntervalAsString(now - time_cit->first) + " ago");
                 }
                 {
-                  TD d;
-                  TEXT(single_event->EventAsString());
+                  TD td(EscapeHtmlEntities(single_event->EventAsString()));
                 }
                 {
-                  TD d;
-                  TEXT(single_event->DetailsAsString());
+                  TD td(EscapeHtmlEntities(single_event->DetailsAsString()));
                 }
               }
             }
           }
         } else {
-          B("Device ID not found.");
-          TEXT("<br><br>");
-          RenderImage();
+          RenderErrorSection("Device ID not found.");
+          RenderImageSection();
         }
       }
 

@@ -70,44 +70,91 @@ struct HTML final {
   std::string AsString() { return ThreadLocalSingleton<State>().Commit(); }
 };
 
-#if defined(SCOPED_TAG) || defined(TEXT_TAG) || defined(SHORT_TAG) || defined(STANDALONE_TAG)
-#error "`SCOPED_TAG`, `TEXT_TAG`, ``SHORT_TAG` and `STANDALONE_TAG` should not be defined by here."
+// TODO(dkorolev): (or sompylasar or anybody) Move this `ReplaceAllByMap` into Bricks.
+std::string ReplaceAllByMap(const std::string& str, const std::vector<std::pair<std::string, std::string>>& replacements) {
+  std::string output = str;
+  for (const auto& kv : replacements) {
+    std::size_t pos = 0;
+    while (std::string::npos != (pos = output.find(kv.first, pos))) {
+      output.replace(pos, kv.first.length(), kv.second);
+      pos += kv.second.length();
+    }
+  }
+  return output;
+}
+
+std::string EscapeHtmlEntities(const std::string& str) {
+  // The following map does not contain all the entities but it's enough.
+  // http://stackoverflow.com/a/9189067
+  static const std::vector<std::pair<std::string, std::string>> replacements = {
+    {"<", "&lt;"},
+    {"&", "&amp;"},
+    {"\"", "&quot;"},
+    {"'", "&#39;"}};
+  return ReplaceAllByMap(str, replacements);
+}
+
+#if defined(SCOPED_TAG) || defined(TEXT_TAG) || defined(SHORT_TAG)
+#error "`SCOPED_TAG`, `TEXT_TAG`, ``SHORT_TAG` should not be defined by here."
 #endif
 
+// A macro to define HTML tags that start a block when constructed.
+// These tags are closed during destruction, e.g. leaving the scope.
 #define SCOPED_TAG(tag)                                                                   \
   struct tag {                                                                            \
-    tag() { ThreadLocalSingleton<State>().Append("<" #tag ">"); }                         \
     template <typename T>                                                                 \
-    void construct(T&& params) {                                                          \
+    void construct(T&& params, const std::string& content) {                              \
       auto& html = ThreadLocalSingleton<State>();                                         \
       html.Append("<" #tag);                                                              \
       for (const auto cit : params) {                                                     \
         html.Append(" ");                                                                 \
         html.Append(cit.first);                                                           \
-        html.Append("='");                                                                \
-        html.Append(cit.second);                                                          \
-        html.Append("'");                                                                 \
+        html.Append("=\"");                                                               \
+        html.Append(EscapeHtmlEntities(cit.second));                                      \
+        html.Append("\"");                                                                \
       }                                                                                   \
       html.Append(">");                                                                   \
+      html.Append(content);                                                               \
     }                                                                                     \
-    tag(const std::vector<std::pair<std::string, std::string>>& v) { construct(v); }      \
-    tag(std::initializer_list<std::pair<std::string, std::string>> il) { construct(il); } \
+    tag(const std::vector<std::pair<std::string, std::string>>& v, const std::string& content = "") { construct(v, content); }      \
+    tag(std::initializer_list<std::pair<std::string, std::string>> il, const std::string& content = "") { construct(il, content); } \
+    tag(const std::string& content = "") : tag({}, content) {}                            \
     ~tag() { ThreadLocalSingleton<State>().Append("</" #tag ">"); }                       \
-  }
+  };
 
-#define TEXT_TAG(tag)                                               \
-  struct tag {                                                      \
-    tag() { ThreadLocalSingleton<State>().Append("<" #tag ">"); }   \
-    tag(const std::string& content) {                               \
-      ThreadLocalSingleton<State>().Append("<" #tag ">");           \
-      ThreadLocalSingleton<State>().Append(content);                \
-    }                                                               \
-    ~tag() { ThreadLocalSingleton<State>().Append("</" #tag ">"); } \
-  }
+// A macro to define HTML tags that contain only a text string passed to the constructor.
+// These tags are closed immediately during construction.
+#define TEXT_TAG(tag)                                                                     \
+  struct tag {                                                                            \
+    template <typename T>                                                                 \
+    void construct(T&& params, const std::string& content) {                              \
+      auto& html = ThreadLocalSingleton<State>();                                         \
+      html.Append("<" #tag);                                                              \
+      for (const auto cit : params) {                                                     \
+        html.Append(" ");                                                                 \
+        html.Append(cit.first);                                                           \
+        html.Append("=\"");                                                               \
+        html.Append(EscapeHtmlEntities(cit.second));                                      \
+        html.Append("\"");                                                                \
+      }                                                                                   \
+      html.Append(">");                                                                   \
+      html.Append(content);                                                               \
+      html.Append("</" #tag ">");                                                         \
+    }                                                                                     \
+    template <typename T>                                                                 \
+    tag(const std::vector<std::pair<std::string, std::string>>& v, const std::string& content = "") { construct(v, content); }      \
+    tag(std::initializer_list<std::pair<std::string, std::string>> il, const std::string& content = "") { construct(il, content); } \
+    tag(const std::string& content = "") : tag({}, content) {}                            \
+    ~tag() {}                                                                             \
+  };
 
+// A macro to define HTML tags that have no child elements and close immediately, --
+// so called void elements: area, base, br, col, command, embed, hr, img, input, keygen, link, meta, param, source, track, wbr.
+// In HTML5, a trailing slash is optional for a void element, but an end tag would be invalid.
+// In XHTML, a trailing slash is mandatory, so we keep it for strictness.
+// These tags are closed immediately during construction.
 #define SHORT_TAG(tag)                                                                    \
   struct tag {                                                                            \
-    tag() = delete;                                                                       \
     template <typename T>                                                                 \
     void construct(T&& params) {                                                          \
       auto& html = ThreadLocalSingleton<State>();                                         \
@@ -115,46 +162,45 @@ struct HTML final {
       for (const auto cit : params) {                                                     \
         html.Append(" ");                                                                 \
         html.Append(cit.first);                                                           \
-        html.Append("='");                                                                \
-        html.Append(cit.second);                                                          \
-        html.Append("'");                                                                 \
+        html.Append("=\"");                                                               \
+        html.Append(EscapeHtmlEntities(cit.second));                                      \
+        html.Append("\"");                                                                \
       }                                                                                   \
       html.Append(" />");                                                                 \
     }                                                                                     \
     tag(const std::vector<std::pair<std::string, std::string>>& v) { construct(v); }      \
     tag(std::initializer_list<std::pair<std::string, std::string>> il) { construct(il); } \
-  }
+    tag() : tag({}) {}                                                                    \
+    ~tag() {}                                                                             \
+  };
 
-#define STANDALONE_TAG(tag)                                                               \
-  struct tag {                                                                            \
-    tag() = delete;                                                                       \
-    template <typename T>                                                                 \
-    void construct(T&& params) {                                                          \
-      auto& html = ThreadLocalSingleton<State>();                                         \
-      html.Append("<" #tag);                                                              \
-      for (const auto cit : params) {                                                     \
-        html.Append(" ");                                                                 \
-        html.Append(cit.first);                                                           \
-        html.Append("='");                                                                \
-        html.Append(cit.second);                                                          \
-        html.Append("'");                                                                 \
-      }                                                                                   \
-      html.Append(">");                                                                   \
-    }                                                                                     \
-    tag(const std::vector<std::pair<std::string, std::string>>& v) { construct(v); }      \
-    tag(std::initializer_list<std::pair<std::string, std::string>> il) { construct(il); } \
-  }
-
+// Document structure tags.
 SCOPED_TAG(HEAD);
 SCOPED_TAG(BODY);
 
-TEXT_TAG(TITLE);
-TEXT_TAG(P);
-TEXT_TAG(PRE);
+// HTML5 body structure tags.
+SCOPED_TAG(HEADER);
+SCOPED_TAG(MAIN);
+SCOPED_TAG(FOOTER);
+SCOPED_TAG(NAV);
+SCOPED_TAG(SECTION);
+SCOPED_TAG(ARTICLE);
+SCOPED_TAG(ASIDE);
 
-SCOPED_TAG(TABLE);
-SCOPED_TAG(TR);
-SCOPED_TAG(TD);
+// Page title and metadata.
+TEXT_TAG(TITLE);
+SHORT_TAG(META);
+
+// Script and style tags.
+TEXT_TAG(SCRIPT);
+TEXT_TAG(STYLE);
+SHORT_TAG(LINK);
+
+// Commonly used tags.
+SCOPED_TAG(DIV);
+SCOPED_TAG(SPAN);
+SCOPED_TAG(P);
+SCOPED_TAG(BLOCKQUOTE);
 
 SCOPED_TAG(A);
 
@@ -162,11 +208,41 @@ TEXT_TAG(B);
 TEXT_TAG(I);
 TEXT_TAG(U);
 
+SHORT_TAG(BR);
+
 SHORT_TAG(IMG);
 
-SCOPED_TAG(FORM);
-STANDALONE_TAG(INPUT);
+// Headings.
+SCOPED_TAG(H1);
+SCOPED_TAG(H2);
+SCOPED_TAG(H3);
+SCOPED_TAG(H4);
+SCOPED_TAG(H5);
+SCOPED_TAG(H6);
 
+// Lists.
+SCOPED_TAG(UL);
+SCOPED_TAG(OL);
+SCOPED_TAG(LI);
+
+// Preformatted blocks.
+SCOPED_TAG(PRE);
+
+// Tables.
+SCOPED_TAG(TABLE);
+SCOPED_TAG(THEAD);
+SCOPED_TAG(TBODY);
+SCOPED_TAG(TR);
+SCOPED_TAG(TD);
+SCOPED_TAG(TH);
+
+// Form tags.
+SCOPED_TAG(FORM);
+SHORT_TAG(INPUT);
+SCOPED_TAG(LABEL);
+SCOPED_TAG(BUTTON);
+
+// A block of text or HTML.
 template <typename T>
 void TEXT(T&& x) {
   ThreadLocalSingleton<State>().Append(std::forward<T>(x));
@@ -175,7 +251,6 @@ void TEXT(T&& x) {
 #undef SCOPED_TAG
 #undef TEXT_TAG
 #undef SHORT_TAG
-#undef STANDALONE_TAG
 
 }  // namespace html
 
