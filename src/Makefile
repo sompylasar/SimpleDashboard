@@ -21,16 +21,19 @@ endif
 
 LOGS_FILENAME="/var/log/current.jsonlines"
 
-all: build/code
+all: build/code build/static.json
 	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/code || echo "Build successful."
 
 build/code: build code.cc
+
+build/static.json: build build-static.js $(shell find ./static_src)
+	mkdir -p static && node build-static.js ./static_src ./static/static.json
 
 build:
 	mkdir -p build
 
 clean:
-	rm -rf build
+	rm -rf build && rm -rf static
 
 build/%: %.cc
 	${CPLUSPLUS} ${CPPFLAGS} -o $@ $< ${LDFLAGS}

@@ -32,6 +32,9 @@ SOFTWARE.
 #include "../Bricks/graph/gnuplot.h"
 #include "../Bricks/dflags/dflags.h"
 
+// TODO(sompylasar): Remove when `Base64Decode` is moved to Bricks `cerealize/cerealize.h`.
+#include "../Bricks/3party/cereal/include/external/base64.hpp"
+
 // Stored log event structure, to parse the JSON-s.
 #include "../SimpleServer/log_collector.h"
 
@@ -44,6 +47,20 @@ DEFINE_string(route, "/secret", "The route to serve the dashboard on.");
 
 DEFINE_int32(initial_tick_wait_ms, 100, "");
 DEFINE_int32(tick_interval_ms, 2500, "");
+
+// WARNING: The `static_json_path` is sensitive to the current working directory.
+DEFINE_string(static_json_path, "./static/static.json", "The path to the static files bundle.");
+
+
+// TODO(sompylasar): Move to Bricks `cerealize/cerealize.h`.
+namespace bricks {
+namespace cerealize {
+inline std::string Base64Decode(const std::string& s) {
+  return base64::decode(s);
+}
+}  // namespace cerealize
+}  // namespace bricks
+
 
 namespace mq {
 
@@ -327,12 +344,12 @@ void RenderHtmlHead(const std::string& title_text) {
     META charset({{"charset", "utf-8"}});
     META viewport({{"name", "viewport"}, {"content", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"}});
     TITLE title(title_text);
-    LINK materializecss_style({{"rel", "stylesheet"}, {"href", "https://cdnjs.cloudflare.com/ajax/libs/materialize/0.96.1/css/materialize.min.css"}});
+    LINK materializecss_style({{"rel", "stylesheet"}, {"href", FLAGS_route + "/static/" + "materialize-0.96.1/css/materialize.min.css"}});
     {
-      SCRIPT jquery({{"src", "https://code.jquery.com/jquery-2.1.1.min.js"}});
+      SCRIPT jquery({{"src", FLAGS_route + "/static/" + "jquery-2.1.4.min.js"}});
     }
     {
-      SCRIPT materializecss_script({{"src", "https://cdnjs.cloudflare.com/ajax/libs/materialize/0.96.1/js/materialize.min.js"}});
+      SCRIPT materializecss_script({{"src", FLAGS_route + "/static/" + "materialize-0.96.1/js/materialize.min.js"}});
     }
     {
       using namespace html;
@@ -531,6 +548,64 @@ std::string TimeIntervalAsString(uint64_t ms) {
   }
 }
 
+struct StaticFilesBundle {
+  struct File {
+    std::string path;
+    std::string content;
+    
+    template <typename A>
+    void serialize(A& ar) {
+      ar(CEREAL_NVP(path), CEREAL_NVP(content));
+    }
+  };
+  
+  std::vector<File> files;
+  
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(files));
+  }
+};
+
+void RegisterStaticFiles() {
+  using bricks::FileSystem;
+  using bricks::cerealize::ParseJSON;
+  using bricks::cerealize::Base64Decode;
+  using bricks::net::GetFileMimeType;
+  using bricks::net::api::StaticFileServer;
+  using bricks::net::CannotServeStaticFilesOfUnknownMIMEType;
+  
+  // For the JSON file format, see `build-static.js`.
+  static auto bundle = ParseJSON<StaticFilesBundle>(FileSystem::ReadFileAsString(FLAGS_static_json_path));
+  for (const auto file : bundle.files) {
+    std::string content_type(GetFileMimeType(file.path, ""));
+    if (content_type.empty()) {
+      // TODO(sompylasar): Move to `bricks::net::GetFileMimeType` (`net/mime_type.h`).
+      // Web Fonts support. http://www.fantomfactory.org/articles/mime-types-for-web-fonts-in-bedsheet#mimeTypes
+      static const std::map<std::string, std::string> file_extension_to_mime_type_map = {
+        {"woff", "application/font-woff"},
+        {"woff2", "application/font-woff2"},
+        {"ttf", "application/font-sfnt"},
+        {"otf", "application/font-sfnt"},
+        {"eot", "application/vnd.ms-fontobject"}
+      };
+      std::string extension = FileSystem::GetFileExtension(file.path);
+      std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+      const auto cit = file_extension_to_mime_type_map.find(extension);
+      if (cit != file_extension_to_mime_type_map.end()) {
+        content_type = cit->second;
+      }
+    }
+    if (!content_type.empty()) {
+      // TODO(sompylasar): Properly convert Windows-style paths to URLs.
+      HTTP(FLAGS_port).Register(FLAGS_route + "/static/" + file.path,
+          new StaticFileServer(Base64Decode(file.content), content_type));
+    } else {
+      BRICKS_THROW(CannotServeStaticFilesOfUnknownMIMEType(file.path));
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   ParseDFlags(&argc, &argv);
 
@@ -541,6 +616,8 @@ int main(int argc, char** argv) {
   mq::Consumer consumer;
   const mq::State& immutable_state = consumer.state;
   bricks::mq::MMQ<std::unique_ptr<mq::Message>, mq::Consumer> mmq(consumer);
+
+  RegisterStaticFiles();
 
   // HTTP(FLAGS_port).Register(FLAGS_route + "/", [](Request r) { r("OK"); });
   HTTP(FLAGS_port).Register(FLAGS_route + "/status/",
