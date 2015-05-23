@@ -21,10 +21,10 @@ endif
 
 LOGS_FILENAME="/var/log/current.jsonlines"
 
-all: build/code
-	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/code || echo "Build successful."
+all: build/new
+	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/new || echo "Build successful."
 
-build/code: build code.cc
+build/new: build new.cc
 
 build:
 	mkdir -p build
