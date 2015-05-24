@@ -40,3 +40,6 @@ update:
 
 indent:
 	../../Bricks/KnowSheet/scripts/indent.sh
+
+check:
+	../../Bricks/KnowSheet/scripts/check-all-headers.sh
