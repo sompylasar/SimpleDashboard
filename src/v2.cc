@@ -22,10 +22,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 *******************************************************************************/
 
+#include <algorithm>
+#include <cctype>
+
 #include "stdin_parse.h"
 
 #include "../../Current/Bricks/dflags/dflags.h"
-#include "../../Current/Bricks/strings/printf.h"
+#include "../../Current/Bricks/strings/util.h"
 #include "../../Current/Bricks/template/metaprogramming.h"
 #include "../../Current/Bricks/waitable_atomic/waitable_atomic.h"
 #include "../../Current/Sherlock/sherlock.h"
@@ -41,6 +44,8 @@ DEFINE_int32(port, 3000, "Port to spawn the dashboard on.");
 DEFINE_string(route, "/", "The route to serve the dashboard on.");
 
 using bricks::strings::Printf;
+using bricks::strings::ToLower;
+using bricks::strings::Split;
 using bricks::strings::FromString;
 using bricks::time::Now;
 using bricks::Singleton;
@@ -49,8 +54,13 @@ using bricks::metaprogramming::RTTIDynamicCall;
 
 struct SearchIndex {
   std::map<std::string, std::set<std::string>> terms;
-  //  template<typename A, typename B> static void AddToIndex(const std::map<A, B>&, const std::string& value) {
-  //  }
+
+  void AddToIndex(const std::string& key, const std::string& value) {
+    for (const auto& term : Split(ToLower(key), ::isalnum)) {
+      terms[term].insert(value);
+    }
+  }
+
   template <typename A>
   void serialize(A& ar) {
     ar(CEREAL_NVP(terms));
@@ -66,31 +76,22 @@ struct SearchIndex {
                        iOSBaseEvent> T_TYPES;
     SearchIndex& index;
     const std::string& rhs;
-    std::string text;
     Populator(SearchIndex& index, const std::string& rhs) : index(index), rhs(rhs) {}
-    void operator()(iOSIdentifyEvent) { text = "iOSIdentifyEvent"; }
+    void operator()(iOSIdentifyEvent) {}
     void operator()(const iOSDeviceInfo& e) {
       for (const auto cit : e.info) {
-        index.terms[cit.first].insert(rhs);
-        index.terms[cit.second].insert(rhs);
+        index.AddToIndex(cit.first, rhs);
+        index.AddToIndex(cit.second, rhs);
       }
-
-      const auto cit_model = e.info.find("deviceModel");
-      const auto cit_name = e.info.find("deviceName");
-      text = "iOSDeviceInfo, " + (cit_model != e.info.end() ? cit_model->second : "unspecified device.") +
-             ", `" + (cit_name != e.info.end() ? cit_name->second : "Unnamed") + "`";
     }
-    void operator()(const iOSAppLaunchEvent& e) {
-      text = "iOSAppLaunchEvent, binary of `" + e.binary_version + "`";
-    }
-    void operator()(iOSFirstLaunchEvent) { text = "iOSFirstLaunchEvent"; }
-    void operator()(const iOSFocusEvent& e) {
-      text = std::string("iOSFocusEvent: ") + (e.gained_focus ? "gained" : "lost");
-    }
+    void operator()(const iOSAppLaunchEvent& e) { index.AddToIndex(e.binary_version, rhs); }
+    void operator()(iOSFirstLaunchEvent) {}
+    void operator()(iOSFocusEvent) {}
     void operator()(const iOSGenericEvent& e) {
-      text = "iOSGenericEvent, `" + e.event + "`, `" + e.source + "`";
+      index.AddToIndex(e.event, rhs);
+      index.AddToIndex(e.source, rhs);
     }
-    void operator()(const iOSBaseEvent& e) { text = "iOSBaseEvent, `" + e.description + "`"; }
+    void operator()(const iOSBaseEvent& e) { index.AddToIndex(e.description, rhs); }
   };
 };
 
@@ -150,12 +151,12 @@ struct Splitter {
       }
       bool operator<(const Event& rhs) const { return eid_as_uint64 > rhs.eid_as_uint64; }
     };
-    std::string up;
     std::string error;
+    std::string up;
     std::vector<Event> event;
     template <typename A>
     void serialize(A& ar) {
-      ar(CEREAL_NVP(up), CEREAL_NVP(error), CEREAL_NVP(event));
+      ar(CEREAL_NVP(error), CEREAL_NVP(up), CEREAL_NVP(event));
     }
   };
 
@@ -182,7 +183,7 @@ struct Splitter {
                 for (const auto cit : yoda::MatrixEntry<EventsByGID>::Accessor(data)[key]) {
                   const auto eid_as_uint64 = static_cast<uint64_t>(cit.col);
                   payload.event.push_back(SessionDetailsPayload::Event(
-                      eid_as_uint64, Printf("http://localhost:3000/e?eid=%llu", eid_as_uint64)));
+                      eid_as_uint64, Printf("http://localhost:3000/z?eid=%llu", eid_as_uint64)));
                 }
                 if (!payload.event.empty()) {
                   std::sort(std::begin(payload.event), std::end(payload.event));
@@ -218,10 +219,19 @@ struct Splitter {
     if (!cid.empty()) {
       const std::string gid = "CID:" + cid;
       data.Add(EventsByGID(gid, static_cast<uint64_t>(eid)));
-      Singleton<WaitableAtomic<SearchIndex>>().MutableUse([this, &gid, &e](SearchIndex& index) {
-        RTTIDynamicCall<typename SearchIndex::Populator::T_TYPES>(
-            *e.get(),  // Yes, `const unique_ptr<>`.
-            SearchIndex::Populator(index, "/g?gid=" + gid));
+      Singleton<WaitableAtomic<SearchIndex>>().MutableUse([this, eid, &gid, &e](SearchIndex& index) {
+        // Landing pages for searched are grouped event URI and individual event URI.
+        std::vector<std::string> values = {"/g?gid=" + gid, Printf("/z?eid=%llu", static_cast<uint64_t>(eid))};
+        for (const auto& rhs : values) {
+          // Populate each term.
+          RTTIDynamicCall<typename SearchIndex::Populator::T_TYPES>(*e.get(),  // Yes, `const unique_ptr<>`.
+                                                                    SearchIndex::Populator(index, rhs));
+          index.AddToIndex(gid, rhs);
+          // Make keys and parts of keys themselves searchable.
+          for (const auto& lhs : values) {
+            index.AddToIndex(lhs, rhs);
+          }
+        }
       });
     }
   }
@@ -274,28 +284,48 @@ struct TopLevelResponse {
       ar(CEREAL_NVP(uri), CEREAL_NVP(description));
     }
   };
-  std::vector<Route> route = {{"/log", "Raw events log, persisent connection."},
-                              {"/stats", "Total counters."},
-                              {"/g", "Grouped events browser (mid-level)."},
-                              {"/e?eid=<ID>", "Events details browser (low-level)."}};
-  SearchIndex search_index;
-  void Prepare() {
-    for (auto& r : route) {
-      r.uri = "http://localhost:3000" + r.uri;
+  std::vector<std::string> search_results;
+  std::vector<Route> route = {{"/?q=<SEARCH_QUERY>", "This view, optionally with search results."},
+                              {"/g?gid=<GID>", "Grouped events browser (mid-level)."},
+                              {"/z?eid=<EID>", "Events details browser (low-level)."},
+                              {"/log", "Raw events log, persisent connection."},
+                              {"/stats", "Total counters."}};
+  void Prepare(const std::string& query) {
+    for (auto& route_entry : route) {
+      route_entry.uri = "http://localhost:3000" + route_entry.uri;
     }
-    Singleton<WaitableAtomic<SearchIndex>>().ImmutableUse(
-        [this](const SearchIndex& index) { search_index = index; });
-    for (auto& s : search_index.terms) {
-      std::set<std::string> replacement;
-      for (auto& r : s.second) {
-        replacement.insert("http://localhost:3000" + r);
-      }
-      s.second.swap(replacement);
+    if (!query.empty()) {
+      Singleton<WaitableAtomic<SearchIndex>>().ImmutableUse([this, &query](const SearchIndex& index) {
+        std::set<std::string> current;
+        for (const auto& term : Split(ToLower(query), ::isalnum)) {
+          const auto cit = index.terms.find(term);
+          if (cit != index.terms.end()) {
+            const std::set<std::string>& matches = cit->second;
+            if (current.empty()) {
+              current = matches;
+            } else {
+              std::set<std::string> intersected;
+              std::set_intersection(current.begin(),
+                                    current.end(),
+                                    matches.begin(),
+                                    matches.end(),
+                                    std::inserter(intersected, intersected.begin()));
+              if (!intersected.empty()) {
+                current.swap(intersected);
+              }
+            }
+          }
+        }
+        search_results.assign(current.begin(), current.end());
+        for (auto& uri : search_results) {
+          uri = "http://localhost:3000" + uri;
+        }
+      });
     }
   }
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(route), CEREAL_NVP(search_index));
+    ar(CEREAL_NVP(search_results), CEREAL_NVP(route));
   }
 };
 
@@ -309,7 +339,7 @@ int main(int argc, char** argv) {
 
   HTTP(FLAGS_port).Register(FLAGS_route, [](Request r) {
     TopLevelResponse e;
-    e.Prepare();
+    e.Prepare(r.url.query["q"]);
     r(e);
   });
 
@@ -326,7 +356,7 @@ int main(int argc, char** argv) {
 
   // Expose events, without timestamps, under "/log" for subscriptions, and under "/e" for browsing.
   db.ExposeViaHTTP(FLAGS_port, FLAGS_route + "log");
-  HTTP(FLAGS_port).Register(FLAGS_route + "e", [&db](Request r) {
+  HTTP(FLAGS_port).Register(FLAGS_route + "z", [&db](Request r) {
     db.GetWithNext(static_cast<EID>(FromString<uint64_t>(r.url.query["eid"])), std::move(r));
   });
 
