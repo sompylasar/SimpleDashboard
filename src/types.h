@@ -29,6 +29,7 @@ SOFTWARE.
 
 #include "helpers.h"
 
+#include "../../Current/Bricks/template/metaprogramming.h"
 #include "../../Current/Sherlock/yoda/yoda.h"
 
 // Structured iOS events structure to follow.
@@ -83,14 +84,14 @@ struct EventWithTimestamp : yoda::Padawan {
     if (!e) {
       return "Tick";
     } else {
-      typedef std::tuple<iOSIdentifyEvent,
-                         iOSDeviceInfo,
-                         iOSAppLaunchEvent,
-                         iOSFirstLaunchEvent,
-                         iOSFocusEvent,
-                         iOSGenericEvent,
-                         iOSBaseEvent> T_TYPES;
       struct Describer {
+        typedef std::tuple<iOSIdentifyEvent,
+                           iOSDeviceInfo,
+                           iOSAppLaunchEvent,
+                           iOSFirstLaunchEvent,
+                           iOSFocusEvent,
+                           iOSGenericEvent,
+                           iOSBaseEvent> T_TYPES;
         std::string text;
         void operator()(iOSIdentifyEvent) { text = "iOSIdentifyEvent"; }
         void operator()(const iOSDeviceInfo& e) {
@@ -113,7 +114,7 @@ struct EventWithTimestamp : yoda::Padawan {
       };
       Describer d;
       // TODO(dkorolev): Have `RTTIDynamicCall` support `const unique_ptr<>` w/o `*e.get()`.
-      bricks::metaprogramming::RTTIDynamicCall<T_TYPES>(*e.get(), d);
+      bricks::metaprogramming::RTTIDynamicCall<typename Describer::T_TYPES>(*e.get(), d);
       return d.text;
     }
   }
