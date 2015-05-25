@@ -354,6 +354,10 @@ struct Splitter {
           s.ms_first = ms;
         }
         s.ms_last = ms;
+        const std::string counter_name = event.CanonicalDescription();
+        if (!counter_name.empty()) {
+          ++s.counters[counter_name];
+        }
         s.events.push_back(static_cast<uint64_t>(eid));
         // TODO(dkorolev): DIMA: Populate events.
       });

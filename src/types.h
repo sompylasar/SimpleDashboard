@@ -44,6 +44,14 @@ SOFTWARE.
 // And it still fits 64 bits.
 enum class EID : uint64_t;
 
+typedef std::tuple<iOSIdentifyEvent,
+                   iOSDeviceInfo,
+                   iOSAppLaunchEvent,
+                   iOSFirstLaunchEvent,
+                   iOSFocusEvent,
+                   iOSGenericEvent,
+                   iOSBaseEvent> MIDICHLORIAN_EVENT_TYPES;
+
 template <typename E = struct MidichloriansEvent>
 struct EventWithTimestamp : yoda::Padawan {
   virtual ~EventWithTimestamp() {}
@@ -85,13 +93,6 @@ struct EventWithTimestamp : yoda::Padawan {
       return "Tick";
     } else {
       struct Describer {
-        typedef std::tuple<iOSIdentifyEvent,
-                           iOSDeviceInfo,
-                           iOSAppLaunchEvent,
-                           iOSFirstLaunchEvent,
-                           iOSFocusEvent,
-                           iOSGenericEvent,
-                           iOSBaseEvent> T_TYPES;
         std::string text;
         void operator()(iOSIdentifyEvent) { text = "iOSIdentifyEvent"; }
         void operator()(const iOSDeviceInfo& e) {
@@ -114,8 +115,39 @@ struct EventWithTimestamp : yoda::Padawan {
       };
       Describer d;
       // TODO(dkorolev): Have `RTTIDynamicCall` support `const unique_ptr<>` w/o `*e.get()`.
-      bricks::metaprogramming::RTTIDynamicCall<typename Describer::T_TYPES>(*e.get(), d);
+      bricks::metaprogramming::RTTIDynamicCall<MIDICHLORIAN_EVENT_TYPES>(*e.get(), d);
       return d.text;
+    }
+  }
+
+  // Canonical event representation, for insights.
+  std::string CanonicalDescription() const {
+    if (!e) {
+      return "";
+    } else {
+      struct CanonicalDescriber {
+        std::string gist;
+        void operator()(iOSIdentifyEvent) {}
+        void operator()(const iOSDeviceInfo& e) {
+          const auto cit_model = e.info.find("deviceModel");
+          gist = "iOSDeviceInfo:" + (cit_model != e.info.end() ? cit_model->second : "UNKNOWN");
+        }
+        void operator()(const iOSAppLaunchEvent& e) {
+          gist = "iOSAppLaunchEvent:binary_date=`" + e.binary_version + "`";
+        }
+        void operator()(iOSFirstLaunchEvent) {}
+        void operator()(iOSFocusEvent) {}
+        void operator()(const iOSGenericEvent& e) {
+          if (e.event != "AppOpen" && e.event != "Backgrounded" && e.event != "MemoryWarning") {
+            gist = "iOSGenericEvent:" + e.source + ":`" + e.event + "`";
+          }
+        }
+        void operator()(const iOSBaseEvent& e) { gist = "iOSBaseEvent:`" + e.description + "`"; }
+      };
+      CanonicalDescriber cd;
+      // TODO(dkorolev): Have `RTTIDynamicCall` support `const unique_ptr<>` w/o `*e.get()`.
+      bricks::metaprogramming::RTTIDynamicCall<MIDICHLORIAN_EVENT_TYPES>(*e.get(), cd);
+      return cd.gist;
     }
   }
 
