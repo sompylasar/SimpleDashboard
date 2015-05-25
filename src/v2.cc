@@ -46,6 +46,7 @@ DEFINE_string(route, "/", "The route to serve the dashboard on.");
 using bricks::strings::Printf;
 using bricks::strings::ToLower;
 using bricks::strings::Split;
+using bricks::strings::ToString;
 using bricks::strings::FromString;
 using bricks::time::Now;
 using bricks::Singleton;
@@ -219,7 +220,7 @@ struct Splitter {
     if (!cid.empty()) {
       const std::string gid = "CID:" + cid;
       data.Add(EventsByGID(gid, static_cast<uint64_t>(eid)));
-      Singleton<WaitableAtomic<SearchIndex>>().MutableUse([this, eid, &gid, &e](SearchIndex& index) {
+      Singleton<WaitableAtomic<SearchIndex>>().MutableUse([this, eid, &gid, &e, &event](SearchIndex& index) {
         // Landing pages for searched are grouped event URI and individual event URI.
         std::vector<std::string> values = {"/g?gid=" + gid, Printf("/z?eid=%llu", static_cast<uint64_t>(eid))};
         for (const auto& rhs : values) {
@@ -227,6 +228,7 @@ struct Splitter {
           RTTIDynamicCall<typename SearchIndex::Populator::T_TYPES>(*e.get(),  // Yes, `const unique_ptr<>`.
                                                                     SearchIndex::Populator(index, rhs));
           index.AddToIndex(gid, rhs);
+          index.AddToIndex(ToString(event.ms), rhs);
           // Make keys and parts of keys themselves searchable.
           for (const auto& lhs : values) {
             index.AddToIndex(lhs, rhs);
