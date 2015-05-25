@@ -42,6 +42,7 @@ DEFINE_int32(initial_tick_wait_ms, 1000, "");
 DEFINE_int32(tick_interval_ms, 100, "");
 DEFINE_int32(port, 3000, "Port to spawn the dashboard on.");
 DEFINE_string(route, "/", "The route to serve the dashboard on.");
+DEFINE_string(output_uri_prefix, "http://localhost/foo", "The prefix for the URI-s output by the server.");
 
 using bricks::strings::Printf;
 using bricks::strings::ToLower;
@@ -168,7 +169,7 @@ struct Splitter {
         db.Transaction([&db](typename DB::T_DATA data) {
                          SessionsListPayload payload;
                          for (const auto cit : yoda::MatrixEntry<EventsByGID>::Accessor(data).Rows()) {
-                           payload.sessions.push_back("http://localhost:3000/g?gid=" + cit.key());
+                           payload.sessions.push_back(FLAGS_output_uri_prefix + "/g?gid=" + cit.key());
                          }
                          std::sort(std::begin(payload.sessions), std::end(payload.sessions));
                          return payload;
@@ -180,11 +181,11 @@ struct Splitter {
             [key, now_as_uint64, &db](typename DB::T_DATA data) {
               SessionDetailsPayload payload;
               try {
-                payload.up = "http://localhost:3000/g";
+                payload.up = FLAGS_output_uri_prefix + "/g";
                 for (const auto cit : yoda::MatrixEntry<EventsByGID>::Accessor(data)[key]) {
                   const auto eid_as_uint64 = static_cast<uint64_t>(cit.col);
                   payload.event.push_back(SessionDetailsPayload::Event(
-                      eid_as_uint64, Printf("http://localhost:3000/z?eid=%llu", eid_as_uint64)));
+                      eid_as_uint64, Printf("%s/e?eid=%llu", FLAGS_output_uri_prefix.c_str(), eid_as_uint64)));
                 }
                 if (!payload.event.empty()) {
                   std::sort(std::begin(payload.event), std::end(payload.event));
@@ -222,7 +223,7 @@ struct Splitter {
       data.Add(EventsByGID(gid, static_cast<uint64_t>(eid)));
       Singleton<WaitableAtomic<SearchIndex>>().MutableUse([this, eid, &gid, &e, &event](SearchIndex& index) {
         // Landing pages for searched are grouped event URI and individual event URI.
-        std::vector<std::string> values = {"/g?gid=" + gid, Printf("/z?eid=%llu", static_cast<uint64_t>(eid))};
+        std::vector<std::string> values = {"/g?gid=" + gid, Printf("/e?eid=%llu", static_cast<uint64_t>(eid))};
         for (const auto& rhs : values) {
           // Populate each term.
           RTTIDynamicCall<typename SearchIndex::Populator::T_TYPES>(*e.get(),  // Yes, `const unique_ptr<>`.
@@ -289,12 +290,12 @@ struct TopLevelResponse {
   std::vector<std::string> search_results;
   std::vector<Route> route = {{"/?q=<SEARCH_QUERY>", "This view, optionally with search results."},
                               {"/g?gid=<GID>", "Grouped events browser (mid-level)."},
-                              {"/z?eid=<EID>", "Events details browser (low-level)."},
+                              {"/e?eid=<EID>", "Events details browser (low-level)."},
                               {"/log", "Raw events log, persisent connection."},
                               {"/stats", "Total counters."}};
   void Prepare(const std::string& query) {
     for (auto& route_entry : route) {
-      route_entry.uri = "http://localhost:3000" + route_entry.uri;
+      route_entry.uri = FLAGS_output_uri_prefix + route_entry.uri;
     }
     if (!query.empty()) {
       Singleton<WaitableAtomic<SearchIndex>>().ImmutableUse([this, &query](const SearchIndex& index) {
@@ -318,9 +319,9 @@ struct TopLevelResponse {
             }
           }
         }
-        search_results.assign(current.begin(), current.end());
+        search_results.assign(current.rbegin(), current.rend());
         for (auto& uri : search_results) {
-          uri = "http://localhost:3000" + uri;
+          uri = FLAGS_output_uri_prefix + uri;
         }
       });
     }
@@ -358,7 +359,7 @@ int main(int argc, char** argv) {
 
   // Expose events, without timestamps, under "/log" for subscriptions, and under "/e" for browsing.
   db.ExposeViaHTTP(FLAGS_port, FLAGS_route + "log");
-  HTTP(FLAGS_port).Register(FLAGS_route + "z", [&db](Request r) {
+  HTTP(FLAGS_port).Register(FLAGS_route + "e", [&db](Request r) {
     db.GetWithNext(static_cast<EID>(FromString<uint64_t>(r.url.query["eid"])), std::move(r));
   });
 
