@@ -80,12 +80,25 @@ struct Splitter {
     }
   };
 
-  struct EventsListPayload {
-    std::string back;
-    std::vector<std::string> events;
+  struct SessionDetailsPayload {
+    struct Event {
+      uint64_t eid_as_uint64;
+      std::string uri;
+      std::string time_ago;
+      std::string time_since_previous_event;
+      std::string text;
+      Event(const uint64_t eid_as_uint64, const std::string& uri) : eid_as_uint64(eid_as_uint64), uri(uri) {}
+      template <typename A>
+      void serialize(A& ar) {
+        ar(CEREAL_NVP(uri), CEREAL_NVP(time_ago), CEREAL_NVP(time_since_previous_event), CEREAL_NVP(text));
+      }
+      bool operator<(const Event& rhs) const { return eid_as_uint64 > rhs.eid_as_uint64; }
+    };
+    std::string up;
+    std::vector<Event> event;
     template <typename A>
     void serialize(A& ar) {
-      ar(CEREAL_NVP(back), CEREAL_NVP(events));
+      ar(CEREAL_NVP(up), CEREAL_NVP(event));
     }
   };
 
@@ -103,14 +116,32 @@ struct Splitter {
                        },
                        std::move(r));
       } else {
-        db.Transaction([key, &db](typename DB::T_DATA data) {
-                         EventsListPayload payload;
-                         payload.back = "http://localhost:3000/s";
+        const auto now_as_uint64 = static_cast<uint64_t>(bricks::time::Now());
+        db.Transaction([key, now_as_uint64, &db](typename DB::T_DATA data) {
+                         SessionDetailsPayload payload;
+                         payload.up = "http://localhost:3000/s";
                          for (const auto cit : yoda::MatrixEntry<KeyedByClientID>::Accessor(data)[key]) {
-                           payload.events.push_back(
-                               Printf("http://localhost:3000/e?q=%llu", static_cast<uint64_t>(cit.col)));
+                           const auto eid_as_uint64 = static_cast<uint64_t>(cit.col);
+                           payload.event.push_back(SessionDetailsPayload::Event(
+                               eid_as_uint64, Printf("http://localhost:3000/e?q=%llu", eid_as_uint64)));
                          }
-                         std::sort(std::begin(payload.events), std::end(payload.events));
+                         if (!payload.event.empty()) {
+                           std::sort(std::begin(payload.event), std::end(payload.event));
+                           for (auto& e : payload.event) {
+                             const auto ev = data[static_cast<EID>(e.eid_as_uint64)];
+                             e.time_ago = MillisecondIntervalAsString(now_as_uint64 - ev.ms);
+                             e.text = ev.Description();
+                           }
+                           for (size_t i = 0; i + 1 < payload.event.size(); ++i) {
+                             payload.event[i].time_since_previous_event = MillisecondIntervalAsString(
+                                 ((payload.event[i].eid_as_uint64 - payload.event[i + 1].eid_as_uint64) / 1000),
+                                 "same second as the event below",
+                                 "the event below + ");
+                           }
+                           payload.event.back().time_since_previous_event =
+                               "a long time ago in a galaxy far far away";
+                         }
+
                          return payload;
                        },
                        std::move(r));

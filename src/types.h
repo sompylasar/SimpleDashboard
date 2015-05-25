@@ -31,6 +31,10 @@ SOFTWARE.
 
 #include "../../Current/Sherlock/yoda/yoda.h"
 
+// Structured iOS events structure to follow.
+#define COMPILE_MIDICHLORIANS_AS_SERVER_SIDE_CODE
+#include "../MidichloriansBeta/Current/Midichlorians.h"
+
 // `EID`, "Event ID", is a monotonically increasing microsecond timestamp,
 // computed as "multiply the millisecond timestamp by 1000, keep adding one as necessary".
 //
@@ -72,6 +76,46 @@ struct EventWithTimestamp : yoda::Padawan {
     key = rhs.key;
     ms = rhs.ms;
     e = std::move(rhs.e);
+  }
+
+  // Human-friedly representation.
+  std::string Description() const {
+    if (!e) {
+      return "Tick";
+    } else {
+      typedef std::tuple<iOSIdentifyEvent,
+                         iOSDeviceInfo,
+                         iOSAppLaunchEvent,
+                         iOSFirstLaunchEvent,
+                         iOSFocusEvent,
+                         iOSGenericEvent,
+                         iOSBaseEvent> T_TYPES;
+      struct Describer {
+        std::string text;
+        void operator()(iOSIdentifyEvent) { text = "iOSIdentifyEvent"; }
+        void operator()(const iOSDeviceInfo& e) {
+          const auto cit_model = e.info.find("deviceModel");
+          const auto cit_name = e.info.find("deviceName");
+          text = "iOSDeviceInfo, " + (cit_model != e.info.end() ? cit_model->second : "unspecified device.") +
+                 ", `" + (cit_name != e.info.end() ? cit_name->second : "Unnamed") + "`";
+        }
+        void operator()(const iOSAppLaunchEvent& e) {
+          text = "iOSAppLaunchEvent, binary of `" + e.binary_version + "`";
+        }
+        void operator()(iOSFirstLaunchEvent) { text = "iOSFirstLaunchEvent"; }
+        void operator()(const iOSFocusEvent& e) {
+          text = std::string("iOSFocusEvent: ") + (e.gained_focus ? "gained" : "lost");
+        }
+        void operator()(const iOSGenericEvent& e) {
+          text = "iOSGenericEvent, `" + e.event + "`, `" + e.source + "`";
+        }
+        void operator()(const iOSBaseEvent& e) { text = "iOSBaseEvent, `" + e.description + "`"; }
+      };
+      Describer d;
+      // TODO(dkorolev): Have `RTTIDynamicCall` support `const unique_ptr<>` w/o `*e.get()`.
+      bricks::metaprogramming::RTTIDynamicCall<T_TYPES>(*e.get(), d);
+      return d.text;
+    }
   }
 
   // Cerealization logic.

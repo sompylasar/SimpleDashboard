@@ -45,10 +45,10 @@ SOFTWARE.
 #include "../../Current/Sherlock/yoda/yoda.h"
 
 // Stored log event structure, to parse the JSON-s.
-#include "../SimpleServer/log_collector.h"
+#include "../../Current/SimpleServer/log_collector.h"
 
 // Parses events from standard input. Expects them to be of type `LogEntry`,
-// see `../SimpleServer/log_collector.h`.
+// see `../../Current/SimpleServer/log_collector.h`.
 struct State {
   const uint64_t start_ms;
   uint64_t last_event_ms = 0;

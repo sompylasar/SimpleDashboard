@@ -33,7 +33,7 @@ SOFTWARE.
 #include "../Bricks/dflags/dflags.h"
 
 // Stored log event structure, to parse the JSON-s.
-#include "../SimpleServer/log_collector.h"
+#include "../../Current/SimpleServer/log_collector.h"
 
 // Structured iOS events structure to follow.
 #define COMPILE_MIDICHLORIANS_AS_SERVER_SIDE_CODE

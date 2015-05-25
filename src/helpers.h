@@ -39,7 +39,9 @@ std::unique_ptr<T> CloneSerializable(const std::unique_ptr<T, D>& immutable_inpu
   return ParseJSON<std::unique_ptr<T>>(JSON(immutable_input));
 }
 
-inline std::string MillisecondIntervalAsString(uint64_t dt) {
+inline std::string MillisecondIntervalAsString(uint64_t dt,
+                                               const std::string& just_now = "just now",
+                                               const std::string& not_just_now_prefix = "") {
   using bricks::strings::Printf;
   dt /= 1000;
   if (dt) {
@@ -57,9 +59,9 @@ inline std::string MillisecondIntervalAsString(uint64_t dt) {
         }
       }
     }
-    return result;
+    return not_just_now_prefix + result;
   } else {
-    return "just now";
+    return just_now;
   }
 }
 
