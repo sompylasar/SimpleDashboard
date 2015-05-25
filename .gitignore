@@ -3,6 +3,7 @@ build
 
 # From KnowSheet.
 .noshit
+.current
 
 core
 *.h.gch

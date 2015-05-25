@@ -27,8 +27,8 @@ SOFTWARE.
 #ifndef HELPERS_H
 #define HELPERS_H
 
-#include "../Bricks/cerealize/cerealize.h"
-#include "../Bricks/strings/printf.h"
+#include "../../Current/Bricks/cerealize/cerealize.h"
+#include "../../Current/Bricks/strings/printf.h"
 
 template <typename T, typename D>
 std::unique_ptr<T> CloneSerializable(const std::unique_ptr<T, D>& immutable_input) {

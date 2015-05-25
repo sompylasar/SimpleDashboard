@@ -37,14 +37,12 @@ SOFTWARE.
 #include "types.h"
 #include "helpers.h"
 
-#include "../../Sherlock/sherlock.h"
-#include "../../Sherlock/yoda/yoda.h"
-
-#include "../Bricks/time/chrono.h"
-#include "../Bricks/strings/printf.h"
-
-#include "../Bricks/template/metaprogramming.h"
-#include "../Bricks/dflags/dflags.h"
+#include "../../Current/Bricks/template/metaprogramming.h"
+#include "../../Current/Bricks/dflags/dflags.h"
+#include "../../Current/Bricks/time/chrono.h"
+#include "../../Current/Bricks/strings/printf.h"
+#include "../../Current/Sherlock/sherlock.h"
+#include "../../Current/Sherlock/yoda/yoda.h"
 
 // Stored log event structure, to parse the JSON-s.
 #include "../SimpleServer/log_collector.h"
@@ -74,13 +72,12 @@ struct State {
 
 // `ENTRY_TYPE` should have a two-parameter constructor, from { `timestamp`, `std::move(event)` }.
 template <typename HTTP_BODY_BASE_TYPE, typename ENTRY_TYPE, typename YODA>
-void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(
-    sherlock::StreamInstance<std::unique_ptr<ENTRY_TYPE>>& raw,
-    YODA& db,
-    const uint64_t initial_tick_wait_ms = 10000,
-    const uint64_t tick_interval_ms = 1000,
-    int port = 0,
-    const std::string& route = "") {
+void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::StreamInstance<EID>& raw,
+                                                                YODA& db,
+                                                                const uint64_t initial_tick_wait_ms = 10000,
+                                                                const uint64_t tick_interval_ms = 1000,
+                                                                int port = 0,
+                                                                const std::string& route = "") {
   // Maintain and report the state.
   bricks::WaitableAtomic<State> state;
   if (port) {
@@ -110,15 +107,22 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(
     // I think it's safe to assume we're quite a bit under 1M QPS. -- D.K.
     // TODO(dkorolev): "Time went back" logging.
     last_key = std::max(last_key + 1, e->ms * 1000);
-    e->key = static_cast<EID>(last_key);
+    if (!e->e) {
+      // Make sure ticks end with '999'.
+      // Totally unnecessary, except for convenience and human readability. -- D.K.
+      last_key = ((last_key / 1000) * 1000) + 999;
+    }
+    // const auto eid = static_cast<EID>(8e18 + last_key);  // "800*" is our convention. -- D.K.
+    const auto eid = static_cast<EID>(last_key);
+    e->key = eid;
 
     // If it's not the `tick` one, add it to the DB.
     if (e->e) {
       db.Add(*e);
     }
 
-    // Always publish the event.
-    raw.Publish(std::move(e));
+    // Always publish to the raw stream, be it the event or the tick.
+    raw.Publish(eid);
   };
 
   // Ensure that tick events are being sent periodically.
@@ -134,9 +138,9 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(
     explicit TickSender(PUBLISH_F publish_f) : publish_f(publish_f) {}
 
     void Relax(uint64_t t, bool force) {
+      std::lock_guard<std::mutex> guard(mutex);
       const uint64_t w = static_cast<uint64_t>(bricks::time::Now());
       assert(w >= last_tick_wall);
-      std::lock_guard<std::mutex> guard(mutex);
       if (force) {
         last_tick_wall = w;
       } else {
@@ -159,7 +163,7 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(
 
       if (t < last_tick_data) {
         std::cerr << "Time went back from " << last_tick_data << " to " << t << " (by " << (last_tick_data - t)
-                  << " ms.)" << std::endl;
+                  << " ms, force = " << force << ")" << std::endl;
         ::exit(-1);
       }
 

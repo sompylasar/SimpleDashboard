@@ -29,7 +29,7 @@ SOFTWARE.
 
 #include "helpers.h"
 
-#include "../../Sherlock/yoda/yoda.h"
+#include "../../Current/Sherlock/yoda/yoda.h"
 
 // `EID`, "Event ID", is a monotonically increasing microsecond timestamp,
 // computed as "multiply the millisecond timestamp by 1000, keep adding one as necessary".
@@ -77,6 +77,7 @@ struct EventWithTimestamp : yoda::Padawan {
   // Cerealization logic.
   template <typename A>
   void serialize(A& ar) {
+    Padawan::serialize(ar);
     ar(CEREAL_NVP(key), CEREAL_NVP(ms), CEREAL_NVP(e));
   }
 };

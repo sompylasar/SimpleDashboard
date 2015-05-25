@@ -21,10 +21,10 @@ endif
 
 LOGS_FILENAME="/var/log/current.jsonlines"
 
-all: build/new
-	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/new || echo "Build successful."
+all: build/v2
+	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/v2 || echo "Build successful."
 
-build/new: build new.cc
+build/v2: build v2.cc
 
 build:
 	mkdir -p build
@@ -32,14 +32,14 @@ build:
 clean:
 	rm -rf build
 
-build/%: %.cc
+build/%: %.cc *.h
 	${CPLUSPLUS} ${CPPFLAGS} -o $@ $< ${LDFLAGS}
 
 update:
 	(cd .. ; git submodule update --init --recursive)
 
 indent:
-	../../Bricks/KnowSheet/scripts/indent.sh
+	../../Current/scripts/indent.sh
 
 check:
-	../../Bricks/KnowSheet/scripts/check-all-headers.sh
+	../../Current/scripts/check-all-headers.sh
