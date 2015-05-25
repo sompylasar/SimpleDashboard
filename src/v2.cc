@@ -115,12 +115,72 @@ struct EventsByGID : yoda::Padawan {
 };
 CEREAL_REGISTER_TYPE(EventsByGID);
 
+// TODO(dkorolev): Order of events.
+// TODO(dkorolev): "Past N prior to X" events.
+// TODO(dkorolev): "A within T from B" events.
+struct AggregatedSessionInfo : yoda::Padawan {
+  // Unique keys. Both can be used for traversal / retrieval.
+  std::string sid;  // SID, the aggregated session ID.
+  std::string gid;  // GID, the identifier of the group this session comes from.
+
+  struct Row {
+    std::string sid;
+    bool operator<(const Row& rhs) const { return sid < rhs.sid; }
+  };
+  struct Col {
+    std::string gid;
+    bool operator<(const Col& rhs) const { return gid < rhs.gid; }
+  };
+
+  Row row() const { return Row{sid}; }
+  Col col() const { return Col{gid}; }
+
+  // Unique identifier.
+  std::string uri;
+
+  // Aggregated numbers.
+  size_t number_of_events;
+  size_t number_of_seconds;
+
+  // Simple aggregation.
+  std::map<std::string, size_t> counters;
+
+  // Timestamps, first and last.
+  uint64_t ms_first;
+  uint64_t ms_last;
+
+  // Events, because meh. -- D.K.
+  std::vector<uint64_t> events;
+
+  void Finalize() {
+    number_of_events = events.size();
+    number_of_seconds = (ms_last - ms_first + 1000 - 1) / 1000;
+  }
+
+  template <typename A>
+  void serialize(A& ar) {
+    Padawan::serialize(ar);
+    ar(CEREAL_NVP(uri),
+       CEREAL_NVP(sid),
+       CEREAL_NVP(gid),
+       CEREAL_NVP(number_of_events),
+       CEREAL_NVP(number_of_seconds),
+       CEREAL_NVP(counters),
+       CEREAL_NVP(ms_first),
+       CEREAL_NVP(ms_last),
+       CEREAL_NVP(events));
+  }
+};
+CEREAL_REGISTER_TYPE(AggregatedSessionInfo);
+
 namespace DashboardAPIType {
 
 using yoda::API;
 using yoda::Dictionary;
 using yoda::MatrixEntry;
-typedef API<Dictionary<MidichloriansEventWithTimestamp>, MatrixEntry<EventsByGID>> DB;
+typedef API<Dictionary<MidichloriansEventWithTimestamp>,
+            MatrixEntry<EventsByGID>,
+            MatrixEntry<AggregatedSessionInfo>> DB;
 
 }  // namespace DashboardAPIType
 
@@ -162,7 +222,42 @@ struct Splitter {
     }
   };
 
+  struct CurrentSessions {
+    std::map<std::string, AggregatedSessionInfo> map;
+    void EndTimedOutSessions(const uint64_t ms, typename DB::T_DATA& data) {
+      std::vector<std::string> sessions_to_end;
+      for (const auto cit : map) {
+        if (ms - cit.second.ms_last > 10 * 60 * 1000) {
+          sessions_to_end.push_back(cit.first);
+        }
+      }
+      for (const auto key : sessions_to_end) {
+        AggregatedSessionInfo& session = map[key];
+        session.Finalize();
+        std::cerr << "Finalized " << session.sid << "\n";
+        data.Add(session);
+        map.erase(key);
+      }
+    }
+    template <typename A>
+    void serialize(A& ar) {
+      ar(CEREAL_NVP(map));
+    }
+  };
+
+  struct SessionsPayload {
+    CurrentSessions current;
+    std::map<std::string, std::map<std::string, AggregatedSessionInfo>> finalized;
+    template <typename A>
+    void serialize(A& ar) {
+      ar(CEREAL_NVP(current), CEREAL_NVP(finalized));
+    }
+  };
+
+  WaitableAtomic<CurrentSessions> current_sessions;
+
   explicit Splitter(DB& db) : db(db) {
+    // Grouped logs browser.
     HTTP(FLAGS_port).Register(FLAGS_route + "g", [this, &db](Request r) {
       const std::string& key = r.url.query["gid"];
       if (key.empty()) {
@@ -210,17 +305,60 @@ struct Splitter {
             std::move(r));
       }
     });
+
+    // Sessions browser.
+    HTTP(FLAGS_port).Register(FLAGS_route + "s", [this, &db](Request r) {
+      db.Transaction([this, &db](typename DB::T_DATA data) {
+                       SessionsPayload payload;
+                       // Current sessions.
+                       current_sessions.ImmutableUse(
+                           [this, &payload](const CurrentSessions& current) { payload.current = current; });
+                       // Finalized sessions.
+                       const auto& accessor = yoda::MatrixEntry<AggregatedSessionInfo>::Accessor(data);
+                       for (const auto& per_gid : accessor.Cols()) {
+                         auto& result_per_gid = payload.finalized[per_gid.key().gid];
+                         for (const auto& individual_session : per_gid) {
+                           result_per_gid[individual_session.sid] = individual_session;
+                         }
+                       }
+                       return payload;
+                     },
+                     std::move(r));
+    });
   }
 
   void RealEvent(EID eid, const MidichloriansEventWithTimestamp& event, typename DB::T_DATA& data) {
     // Only real events, not ticks with empty `event.e`, should make it here.
     const auto& e = event.e;
     assert(e);
+
     // Start / update / end active sessions.
     const std::string& cid = e->client_id;
     if (!cid.empty()) {
+      // Keep track of events per group.
       const std::string gid = "CID:" + cid;
       data.Add(EventsByGID(gid, static_cast<uint64_t>(eid)));
+
+      // Keep track of current and finalized sessions.
+      // TODO(dkorolev): This should be a listener to support a chain of streams, not a WaitableAtomic<>.
+      current_sessions.MutableUse([this, eid, &gid, &e, &event, &data](CurrentSessions& current) {
+        const uint64_t ms = event.ms;
+        current.EndTimedOutSessions(ms, data);
+        auto& s = current.map[gid];
+        if (s.gid.empty()) {
+          // A new session is to be created.
+          static int index = 100000;
+          s.sid = Printf("K%d", ++index);
+          std::cerr << "Created " << s.sid << " for " << gid << "\n";
+          s.gid = gid;
+          s.ms_first = ms;
+        }
+        s.ms_last = ms;
+        s.events.push_back(static_cast<uint64_t>(eid));
+        // TODO(dkorolev): DIMA: Populate events.
+      });
+
+      // Keep events searchable.
       Singleton<WaitableAtomic<SearchIndex>>().MutableUse([this, eid, &gid, &e, &event](SearchIndex& index) {
         // Landing pages for searched are grouped event URI and individual event URI.
         std::vector<std::string> values = {"/g?gid=" + gid, Printf("/e?eid=%llu", static_cast<uint64_t>(eid))};
@@ -240,9 +378,9 @@ struct Splitter {
   }
 
   void TickEvent(uint64_t ms, typename DB::T_DATA& data) {
-    static_cast<void>(ms);
-    static_cast<void>(data);
     // End active sessions.
+    current_sessions.MutableUse(
+        [this, ms, &data](CurrentSessions& current) { current.EndTimedOutSessions(ms, data); });
   }
 };
 
@@ -256,23 +394,23 @@ struct Listener {
   // TODO(dkorolev): The last two parameters should be made optional.
   // TODO(dkorolev): The return value should be made optional.
   bool Entry(const EID eid, size_t, size_t) {
-    db.Transaction([this, eid](typename DB::T_DATA data) {
-                     // Yep, it's an extra, synchronous, lookup. But this solution is cleaner data-wise.
-                     const auto entry = data.Get(eid);
-                     if (entry) {
-                       // Found in the DB: we have a log-entry-based event.
-                       splitter.RealEvent(
-                           eid, static_cast<const MidichloriansEventWithTimestamp&>(entry), data);
-                     } else {
-                       // Not found in the DB: we have a tick event.
-                       // Notify each active session whether it's interested in ending itself at this moment,
-                       // since some session types do use the "idle time" signal.
-                       // Also, this results in the output of the "current" sessions to actually be Current!
-                       uint64_t tmp = static_cast<uint64_t>(eid);
-                       assert(tmp % 1000 == 999);
-                       splitter.TickEvent(static_cast<uint64_t>(eid) / 1000, std::ref(data));
-                     }
-                   }).Go();
+    db.Transaction(
+           [this, eid](typename DB::T_DATA data) {
+             // Yep, it's an extra, synchronous, lookup. But this solution is cleaner data-wise.
+             const auto entry = yoda::Dictionary<MidichloriansEventWithTimestamp>::Accessor(data).Get(eid);
+             if (entry) {
+               // Found in the DB: we have a log-entry-based event.
+               splitter.RealEvent(eid, static_cast<const MidichloriansEventWithTimestamp&>(entry), data);
+             } else {
+               // Not found in the DB: we have a tick event.
+               // Notify each active session whether it's interested in ending itself at this moment,
+               // since some session types do use the "idle time" signal.
+               // Also, this results in the output of the "current" sessions to actually be Current!
+               uint64_t tmp = static_cast<uint64_t>(eid);
+               assert(tmp % 1000 == 999);
+               splitter.TickEvent(static_cast<uint64_t>(eid) / 1000, std::ref(data));
+             }
+           }).Go();
     return true;
   }
 };
@@ -289,6 +427,7 @@ struct TopLevelResponse {
   };
   std::vector<std::string> search_results;
   std::vector<Route> route = {{"/?q=<SEARCH_QUERY>", "This view, optionally with search results."},
+                              {"/s", "Sessions browser (top-level)."},  // TODO(dkorolev): REST-ful interface.
                               {"/g?gid=<GID>", "Grouped events browser (mid-level)."},
                               {"/e?eid=<EID>", "Events details browser (low-level)."},
                               {"/log", "Raw events log, persisent connection."},
