@@ -234,7 +234,6 @@ struct Splitter {
       for (const auto key : sessions_to_end) {
         AggregatedSessionInfo& session = map[key];
         session.Finalize();
-        std::cerr << "Finalized " << session.sid << "\n";
         data.Add(session);
         map.erase(key);
       }
@@ -315,12 +314,32 @@ struct Splitter {
                            [this, &payload](const CurrentSessions& current) { payload.current = current; });
                        // Finalized sessions.
                        const auto& accessor = yoda::MatrixEntry<AggregatedSessionInfo>::Accessor(data);
+                       const std::vector<int> second_marks({5, 10, 15, 30, 60, 120, 300});
                        for (const auto& per_gid : accessor.Cols()) {
                          auto& result_per_gid = payload.finalized[per_gid.key().gid];
                          for (const auto& individual_session : per_gid) {
                            result_per_gid[individual_session.sid] = individual_session;
+                           std::cerr << individual_session.sid;
+                           const int seconds = static_cast<int>(individual_session.number_of_seconds);
+                           for (const auto t : second_marks) {
+                             if (seconds >= t) {
+                               std::cerr << "\tT>=" << t << "s";
+                             } else {
+                               std::cerr << "\tT<" << t << "s";
+                             }
+                           }
+                           for (const auto& counters : individual_session.counters) {
+                             for (size_t c = 1; c <= counters.second; ++c) {
+                               std::cerr << "\t" << counters.first;
+                               if (c > 1) {
+                                 std::cerr << ">=" << c;
+                               }
+                             }
+                           }
+                           std::cerr << "\n";
                          }
                        }
+                       std::cerr << "END\n";
                        return payload;
                      },
                      std::move(r));
@@ -349,7 +368,6 @@ struct Splitter {
           // A new session is to be created.
           static int index = 100000;
           s.sid = Printf("K%d", ++index);
-          std::cerr << "Created " << s.sid << " for " << gid << "\n";
           s.gid = gid;
           s.ms_first = ms;
         }
@@ -359,7 +377,6 @@ struct Splitter {
           ++s.counters[counter_name];
         }
         s.events.push_back(static_cast<uint64_t>(eid));
-        // TODO(dkorolev): DIMA: Populate events.
       });
 
       // Keep events searchable.
