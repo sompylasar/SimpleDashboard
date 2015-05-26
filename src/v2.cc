@@ -42,7 +42,7 @@ DEFINE_int32(initial_tick_wait_ms, 1000, "");
 DEFINE_int32(tick_interval_ms, 100, "");
 DEFINE_int32(port, 3000, "Port to spawn the dashboard on.");
 DEFINE_string(route, "/", "The route to serve the dashboard on.");
-DEFINE_string(output_uri_prefix, "http://localhost/foo", "The prefix for the URI-s output by the server.");
+DEFINE_string(output_uri_prefix, "http://localhost", "The prefix for the URI-s output by the server.");
 
 using bricks::strings::Printf;
 using bricks::strings::ToLower;
