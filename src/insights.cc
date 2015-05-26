@@ -103,7 +103,7 @@ int main() {
         const DOUBLE q = 1.0 / (prior * 4 + input.size());
         const DOUBLE e = E(q * c[0][0], q * c[0][1], q * c[1][0], q * c[1][1]);
         const DOUBLE de = entropy1[fi] + entropy1[fj] - e;
-        { // if (de > 1e-9) {
+        {  // if (de > 1e-9) {
           std::cout << de << '\t' << e << '\t' << features[i] << '\t' << features[j] << '\t' << cc[0][0] << ' '
                     << cc[0][1] << ' ' << cc[1][0] << ' ' << cc[1][1] << std::endl;
         }

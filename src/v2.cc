@@ -26,6 +26,7 @@ SOFTWARE.
 #include <cctype>
 
 #include "stdin_parse.h"
+#include "insights.h"
 
 #include "../../Current/Bricks/dflags/dflags.h"
 #include "../../Current/Bricks/strings/util.h"
@@ -306,6 +307,7 @@ struct Splitter {
     });
 
     // Sessions browser.
+    // TODO(dkorolev): Browser, not just visualizer.
     HTTP(FLAGS_port).Register(FLAGS_route + "s", [this, &db](Request r) {
       db.Transaction([this, &db](typename DB::T_DATA data) {
                        SessionsPayload payload;
@@ -314,35 +316,70 @@ struct Splitter {
                            [this, &payload](const CurrentSessions& current) { payload.current = current; });
                        // Finalized sessions.
                        const auto& accessor = yoda::MatrixEntry<AggregatedSessionInfo>::Accessor(data);
-                       const std::vector<int> second_marks({5, 10, 15, 30, 60, 120, 300});
-                       for (const auto& per_gid : accessor.Cols()) {
-                         auto& result_per_gid = payload.finalized[per_gid.key().gid];
-                         for (const auto& individual_session : per_gid) {
-                           result_per_gid[individual_session.sid] = individual_session;
-                           std::cerr << individual_session.sid;
-                           const int seconds = static_cast<int>(individual_session.number_of_seconds);
-                           for (const auto t : second_marks) {
-                             if (seconds >= t) {
-                               std::cerr << "\tT>=" << t << "s";
-                             } else {
-                               std::cerr << "\tT<" << t << "s";
-                             }
-                           }
-                           for (const auto& counters : individual_session.counters) {
-                             for (size_t c = 1; c <= counters.second; ++c) {
-                               std::cerr << "\t" << counters.first;
-                               if (c > 1) {
-                                 std::cerr << ">=" << c;
-                               }
-                             }
-                           }
-                           std::cerr << "\n";
+                       for (const auto& sessions_per_group : accessor.Cols()) {
+                         auto& results_per_group = payload.finalized[sessions_per_group.key().gid];
+                         for (const auto& individual_session : sessions_per_group) {
+                           results_per_group[individual_session.sid] = individual_session;
                          }
                        }
-                       std::cerr << "END\n";
                        return payload;
                      },
                      std::move(r));
+    });
+
+    // Export data for insight generation.
+    HTTP(FLAGS_port).Register(FLAGS_route + "i", [this, &db](Request r) {
+      db.Transaction(
+          [this, &db](typename DB::T_DATA data) {
+            const std::vector<int> second_marks({5, 10, 15, 30, 60, 120, 300});
+            // Generate input data for insights.
+            PreInsights payload;
+            // Create one and only realm so far.
+            payload.realm.resize(payload.realm.size() + 1);
+            PreInsights::Realm& realm = payload.realm.front();
+            realm.description = "One and only realm. TODO(dkorolev): Bracketing, grouping, time windows.";
+            // Explain time features.
+            realm.tag["T"].name = "Session length";
+            const auto& accessor = yoda::MatrixEntry<AggregatedSessionInfo>::Accessor(data);
+            for (const auto seconds : second_marks) {
+              auto& feature = realm.feature[Printf(">=%ds", seconds)];
+              feature.tag = "T";
+              feature.yes = Printf("%d seconds or longer", seconds);
+              feature.no = Printf("under %d seconds", seconds);
+            }
+            // Analyze individual sessions and export aggregated info about them.
+            for (const auto& sessions_per_group : accessor.Cols()) {
+              for (const auto& individual_session : sessions_per_group) {
+                // Emit the information about this session, in a way that makes it
+                // comparable with other sessions within the same realm.
+                realm.session.resize(realm.session.size() + 1);
+                PreInsights::Session& output_session = realm.session.back();
+                output_session.key = individual_session.sid;
+                const int seconds = static_cast<int>(individual_session.number_of_seconds);
+                for (const auto t : second_marks) {
+                  if (seconds >= t) {
+                    output_session.feature.emplace_back(Printf(">=%ds", t));
+                  }
+                }
+                for (const auto& counters : individual_session.counters) {
+                  const std::string& feature = counters.first;
+                  realm.tag[feature].name = feature;
+                  realm.feature[feature].tag = feature;
+                  realm.feature[feature].yes = "'" + feature + "'";
+                  output_session.feature.emplace_back(feature);
+                  for (size_t c = 2; c <= counters.second; ++c) {
+                    const std::string count_feature = Printf("%s>=%d", feature.c_str(), static_cast<int>(c));
+                    output_session.feature.emplace_back(count_feature);
+                    realm.feature[count_feature].tag = feature;
+                    realm.feature[count_feature].yes =
+                        Printf("%d or more '%s'", static_cast<int>(c), feature.c_str());
+                  }
+                }
+              }
+            }
+            return payload;
+          },
+          std::move(r));
     });
   }
 
