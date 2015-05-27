@@ -29,27 +29,31 @@ SOFTWARE.
 
 #include "../../Current/Bricks/cerealize/cerealize.h"
 
+// Tags group features into similar ones, for bulk filtering.
+struct TagInfo {
+  std::string name;  // A human-readable name.
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(name));
+  }
+};
+
+// Features are descriptive of the product. They are what makes user users say "Wow!"
+struct FeatureInfo {
+  std::string tag;  // Tag for bulk filtering. `TagInfo` is present for each of them.
+  std::string yes;  // A human readable name of the feature if it is present.
+  std::string no;   // Optional: A human-readable name of the feature if it is not present.
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(tag), CEREAL_NVP(yes), CEREAL_NVP(no));
+  }
+};
+
+// === INPUT ===
+
 // The data structure to gather aggregated info across the sessions within the same realm,
 // for insights generation, ranking, visualization and further filtering.
 struct InsightsInput {
-  // Tags group features into similar ones, for bulk filtering.
-  struct TagInfo {
-    std::string name;  // A human-readable name.
-    template <typename A>
-    void serialize(A& ar) {
-      ar(CEREAL_NVP(name));
-    }
-  };
-  // Features are descriptive of the product. They are what makes user users say "Wow!"
-  struct FeatureInfo {
-    std::string tag;  // Tag for bulk filtering. `TagInfo` is present for each of them.
-    std::string yes;  // A human readable name of the feature if it is present.
-    std::string no;   // Optional: A human-readable name of the feature if it is not present.
-    template <typename A>
-    void serialize(A& ar) {
-      ar(CEREAL_NVP(tag), CEREAL_NVP(yes), CEREAL_NVP(no));
-    }
-  };
   // Session is, well, a feature-vector. As for this exercise, we use binary features only.
   struct Session {
     // The key for the session. To be able to trace it back.
@@ -61,7 +65,7 @@ struct InsightsInput {
       ar(CEREAL_NVP(key), CEREAL_NVP(feature));
     }
   };
-  // Realm defines the universe within which sessions can be analyzed as the whole.
+  // Realm defines the universe within which sessions can be analyzed as the whole,
   // such that comparing them to each and detecting anomalies is what yields insights.
   struct Realm {
     std::string description;
@@ -78,6 +82,66 @@ struct InsightsInput {
   template <typename A>
   void serialize(A& ar) {
     ar(CEREAL_NVP(realm));
+  }
+};
+
+// === OUTPUT ===
+
+// Need to add to a `.cc` file:
+// CEREAL_REGISTER_TYPE(insight::MutualInformation);
+
+namespace insight {
+
+struct AbstractBase {
+  double score;  // The higher, the better.
+  virtual ~AbstractBase() = default;
+  virtual std::string Description() = 0;
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(score));
+  }
+};
+
+struct MutualInformation : AbstractBase {
+  struct Counters {
+    size_t N;    // Total sessions.
+    size_t lhs;  // C[+][*] ( == N - C[-][*]).
+    size_t rhs;  // C[*][+] ( == N - C[*][-]).
+    size_t nn;   // C[-][-].
+    size_t ny;   // C[-][+].
+    size_t yn;   // C[+][-].
+    size_t yy;   // C[+][+].
+    template <typename A>
+    void serialize(A& ar) {
+      ar(CEREAL_NVP(N),
+         CEREAL_NVP(lhs),
+         CEREAL_NVP(rhs),
+         CEREAL_NVP(nn),
+         CEREAL_NVP(ny),
+         CEREAL_NVP(yn),
+         CEREAL_NVP(yy));
+    }
+  };
+  std::string lhs;
+  std::string rhs;
+  Counters counters;
+  std::string Description() override { return "foo"; }
+  template <typename A>
+  void serialize(A& ar) {
+    AbstractBase::serialize(ar);
+    ar(CEREAL_NVP(lhs), CEREAL_NVP(rhs), CEREAL_NVP(counters));
+  }
+};
+
+};  // namespace insight
+
+struct InsightsOutput {
+  std::map<std::string, TagInfo> tag;
+  std::map<std::string, FeatureInfo> feature;
+  std::vector<std::unique_ptr<insight::AbstractBase>> insight;
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(tag), CEREAL_NVP(feature), CEREAL_NVP(insight));
   }
 };
 

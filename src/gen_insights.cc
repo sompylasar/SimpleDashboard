@@ -27,6 +27,7 @@ SOFTWARE.
 #include <set>
 
 #include "insights.h"
+CEREAL_REGISTER_TYPE(insight::MutualInformation);
 
 #include "../../Current/Bricks/dflags/dflags.h"
 #include "../../Current/Bricks/file/file.h"
@@ -36,10 +37,12 @@ using bricks::FileSystem;
 using namespace bricks::strings;
 
 DEFINE_string(input, "data/insights_input.json", "");
+DEFINE_string(output, "data/insights.json", "");
 DEFINE_double(prior, 2.5, "Consider under three events noise.");
 DEFINE_double(gain_threshold,
               0.0,  // No real lower bound, just statistically significant above the noise level.
               "Threshold on delta entropy in mutual information vs. individual information.");
+DEFINE_bool(dump, false, "");
 
 typedef long double DOUBLE;
 const DOUBLE EPS = 1e-8;
@@ -84,6 +87,13 @@ int main(int argc, char** argv) {
   fflush(stderr);
   const auto input = ParseJSON<InsightsInput>(FileSystem::ReadFileAsString(FLAGS_input));
   fprintf(stderr, "\b\b\b: Done, %d realm(s).\n", static_cast<int>(input.realm.size()));
+
+  InsightsOutput output;
+
+  // TODO(dkorolev): This will change with more than one realm.
+  assert(input.realm.size() == 1u);
+  output.tag = input.realm[0].tag;
+  output.feature = input.realm[0].feature;
 
   for (const auto& realm : input.realm) {
     const auto& S = realm.session;
@@ -181,7 +191,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    fprintf(stderr, "\b\b\b\b, bits done ...");
+    fprintf(stderr, "\b\b\b\b, entropy done ...");
 
     for (size_t fi = 0; fi + 1 < F; ++fi) {
       for (size_t fj = fi + 1; fj < F; ++fj) {
@@ -205,10 +215,19 @@ int main(int argc, char** argv) {
           assert(mj != realm.feature.end());
           const std::string& ti = mi->second.tag;
           const std::string& tj = mj->second.tag;
+          // Explicitly disable insights between features of the same tag.
           if (ti != tj) {
-            // Explicitly disable insights between features of the same tag.
-            std::cout << (E[fi] + E[fj] - EE[fi][fj]) << '\t' << feature[fi] << '\t' << feature[fj]
-                      << std::endl;
+            if (FLAGS_dump) {
+              std::cout << (E[fi] + E[fj] - EE[fi][fj]) << '\t' << feature[fi] << '\t' << feature[fj]
+                        << std::endl;
+            }
+            auto insight = make_unique<insight::MutualInformation>();
+            insight->score = gain;
+            insight->lhs = si;
+            insight->rhs = sj;
+            insight->counters = insight::MutualInformation::Counters{
+                N, C[fi], C[fj], CC[fi][fj][0], CC[fi][fj][1], CC[fi][fj][2], CC[fi][fj][3]};
+            output.insight.emplace_back(std::move(insight));
           }
         }
       }
@@ -218,5 +237,18 @@ int main(int argc, char** argv) {
     fflush(stderr);
   }
 
-  fprintf(stderr, "Done generating insights.\n");
+  fprintf(stderr, "Organizing the output ...");
+  fflush(stderr);
+
+  std::sort(output.insight.begin(),
+            output.insight.end(),
+            [](const std::unique_ptr<insight::AbstractBase>& lhs,
+               const std::unique_ptr<insight::AbstractBase>& rhs) { return lhs->score > rhs->score; });
+
+  fprintf(stderr, "\b\b\b\b, writing to '%s' ...", FLAGS_output.c_str());
+  fflush(stderr);
+
+  FileSystem::WriteStringToFile(JSON(output, "insights"), FLAGS_output.c_str());
+
+  fprintf(stderr, "\b\b\b\b: All done.\n");
 }
