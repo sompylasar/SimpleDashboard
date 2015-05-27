@@ -96,6 +96,7 @@ struct AbstractBase {
   double score;  // The higher, the better.
   virtual ~AbstractBase() = default;
   virtual std::string Description() = 0;
+  virtual void EnumerateFeatures(std::function<void(const std::string&)>) = 0;
   template <typename A>
   void serialize(A& ar) {
     ar(CEREAL_NVP(score));
@@ -125,7 +126,11 @@ struct MutualInformation : AbstractBase {
   std::string lhs;
   std::string rhs;
   Counters counters;
-  std::string Description() override { return "foo"; }
+  std::string Description() override { return "WE HAZ INSIGHTS!"; }
+  virtual void EnumerateFeatures(std::function<void(const std::string&)> f) {
+    f(lhs);
+    f(rhs);
+  }
   template <typename A>
   void serialize(A& ar) {
     AbstractBase::serialize(ar);
