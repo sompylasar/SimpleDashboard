@@ -152,6 +152,29 @@ struct SmartSessionInfo {
 
   operator bool() const { return current_insight_index != static_cast<size_t>(-1); }
 
+  bool PassesFilter(size_t index, const InsightsOutput& input) const {
+    std::set<std::string> tags;
+    input.insight[index]->EnumerateFeatures([&input, &tags](const std::string& feature) {
+      const auto cit = input.feature.find(feature);
+      assert(cit != input.feature.end());
+      tags.insert(cit->second.tag);
+      assert(input.tag.find(cit->second.tag) != input.tag.end());
+    });
+    assert(tags.size() == 2u);  // Because we can.
+    for (const auto& filter : filters) {
+      size_t matches = 0;
+      for (const auto& tag : filter) {
+        if (tags.count(tag)) {
+          ++matches;
+        }
+      }
+      if (matches == filter.size()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void TakeAction(const InsightsOutput& input,
                   const std::string& action,
                   SmartInsightResponse& response,
@@ -166,7 +189,7 @@ struct SmartSessionInfo {
     std::set<size_t> history_as_set(history.begin(), history.end());
     size_t i = 0;
     while (current_insight_index == static_cast<size_t>(-1) && i < input.insight.size()) {
-      if (!history_as_set.count(i)) {
+      if (!history_as_set.count(i) && PassesFilter(i, input)) {
         current_insight_index = i;
       }
       ++i;
@@ -212,7 +235,7 @@ struct SmartSessionInfo {
           P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_b});
 
       response.navigation.emplace_back(Navigation{
-          "Filter out all ( " + tags[0] + ") and all (" + tags[1] + ") insights.",
+          "Filter out all (" + tags[0] + ") and all (" + tags[1] + ") insights.",
           P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a_b});
 
       // TODO(dkorolev): Add navigation over `info.history` here.
