@@ -374,6 +374,8 @@ struct Splitter {
                                realm.feature[count_feature].tag = feature;
                                realm.feature[count_feature].yes =
                                    Printf("%d or more '%s'", static_cast<int>(c), feature.c_str());
+                               realm.feature[count_feature].no =
+                                   Printf("%d or less '%s'", static_cast<int>(c) - 1, feature.c_str());
                              }
                            }
                          }

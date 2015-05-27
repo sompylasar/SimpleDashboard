@@ -45,6 +45,8 @@ struct FeatureInfo {
   std::string tag;  // Tag for bulk filtering. `TagInfo` is present for each of them.
   std::string yes;  // A human readable name of the feature if it is present.
   std::string no;   // Optional: A human-readable name of the feature if it is not present.
+  const std::string& YesText() const { return yes; }
+  std::string NoText() const { return !no.empty() ? no : "Not '" + yes + "'"; }
   template <typename A>
   void serialize(A& ar) {
     ar(CEREAL_NVP(tag), CEREAL_NVP(yes), CEREAL_NVP(no));
@@ -98,7 +100,7 @@ struct AbstractBase {
   double score;  // The higher, the better.
   virtual ~AbstractBase() = default;
   virtual std::string Description() = 0;
-  virtual void RenderHTML() = 0;
+  virtual void RenderHTML(const std::map<std::string, FeatureInfo>&) = 0;
   virtual void EnumerateFeatures(std::function<void(const std::string&)>) = 0;
   template <typename A>
   void serialize(A& ar) {
@@ -130,7 +132,7 @@ struct MutualInformation : AbstractBase {
   std::string rhs;
   Counters counters;
   std::string Description() override { return "WE HAZ INSIGHTS!"; }
-  void RenderHTML() override {
+  void RenderHTML(const std::map<std::string, FeatureInfo>& feature) override {
     using namespace html;
     using bricks::strings::ToString;
     if (false) {  // Feature names.
@@ -139,63 +141,95 @@ struct MutualInformation : AbstractBase {
         TR r({{"align", "center"}});
         TD d;
         B("LHS ");
-        TEXT(lhs);
+        // TEXT(lhs);
+        TEXT(feature.find(lhs)->second.YesText());
+        std::cerr << lhs << ' ' << feature.find(lhs)->second.YesText() << std::endl;
       }
       {
         TR r({{"align", "center"}});
         TD d;
         B("RHS ");
-        TEXT(rhs);
+        TEXT(feature.find(rhs)->second.YesText());
+        //        TEXT(rhs);
       }
     }
+    TEXT("<br>");
     {
-      // Absolute counters.
+      // Absolute counters A.
       TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
       {
         TR r({{"align", "center"}});
         { TD d; }
         {
           TD d;
-          B("Number of sessions having this property.");
+          B("YES");
+          PRE(feature.find(lhs)->second.YesText());
         }
         {
           TD d;
-          B("Number of sessions not having this property.");
+          B("NO");
+          PRE(feature.find(lhs)->second.NoText());
         }
       }
       {
         TR r({{"align", "center"}});
         {
           TD d;
-          B("LHS");
-          PRE((" \" " + lhs + " \" "));
+          B("A");
         }
         {
           TD d;
+          TEXT("<font size=+2>");
           PRE(ToString(counters.lhs));
+          TEXT("</font>");
         }
         {
           TD d;
+          TEXT("<font size=+2>");
           PRE(ToString(counters.N - counters.lhs));
-        }
-      }
-      {
-        TR r({{"align", "center"}});
-        {
-          TD d;
-          B("RHS");
-          PRE((" \" " + rhs + " \" "));
-        }
-        {
-          TD d;
-          PRE(ToString(counters.rhs));
-        }
-        {
-          TD d;
-          PRE(ToString(counters.N - counters.rhs));
+          TEXT("</font>");
         }
       }
     }
+    TEXT("<br>");
+    {
+      // Absolute counters B.
+      TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
+      {
+        TR r({{"align", "center"}});
+        { TD d; }
+        {
+          TD d;
+          B("YES");
+          PRE(feature.find(rhs)->second.YesText());
+        }
+        {
+          TD d;
+          B("NO");
+          PRE(feature.find(rhs)->second.NoText());
+        }
+      }
+      {
+        TR r({{"align", "center"}});
+        {
+          TD d;
+          B("B");
+        }
+        {
+          TD d;
+          TEXT("<font size=+2>");
+          PRE(ToString(counters.rhs));
+          TEXT("</font>");
+        }
+        {
+          TD d;
+          TEXT("<font size=+2>");
+          PRE(ToString(counters.N - counters.rhs));
+          TEXT("</font>");
+        }
+      }
+    }
+    TEXT("<br>");
     {
       // Cross-counters.
       TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
@@ -204,41 +238,49 @@ struct MutualInformation : AbstractBase {
         { TD d; }
         {
           TD d;
-          B("Has RHS");
+          B("B: YES");
         }
         {
           TD d;
-          B("Does not have RHS");
+          B("B: NO");
         }
       }
       {
         TR r({{"align", "center"}});
         {
           TD d;
-          B("Has LHS");
+          B("A: YES");
         }
         {
           TD d;
+          TEXT("<font size=+4>");
           PRE(ToString(counters.yy));
+          TEXT("</font>");
         }
         {
           TD d;
+          TEXT("<font size=+4>");
           PRE(ToString(counters.yn));
+          TEXT("</font>");
         }
       }
       {
         TR r({{"align", "center"}});
         {
           TD d;
-          B("Does not have LHS");
+          B("A: NO");
         }
         {
           TD d;
+          TEXT("<font size=+4>");
           PRE(ToString(counters.ny));
+          TEXT("</font>");
         }
         {
           TD d;
+          TEXT("<font size=+4>");
           PRE(ToString(counters.nn));
+          TEXT("</font>");
         }
       }
     }
