@@ -35,14 +35,15 @@ SOFTWARE.
 using bricks::FileSystem;
 using namespace bricks::strings;
 
-DEFINE_string(input, "insights_input.json", "");
+DEFINE_string(input, "data/insights_input.json", "");
 DEFINE_double(prior, 0.5, "");
+DEFINE_double(gain_threshold, 0.1, "Threshold on delta entropy in mutual information vs. individual information.");
 
 typedef long double DOUBLE;
 const DOUBLE EPS = 1e-8;
 const DOUBLE BITS = std::log(DOUBLE(0.5));  // Represent entropy in bits.
 
-DOUBLE shannon(DOUBLE p) {
+DOUBLE entropy(DOUBLE p) {
   assert(p >= 0.0 && p <= 1.0 + EPS);
   if (p > EPS && p < 1.0) {
     return p * std::log(p);
@@ -51,24 +52,26 @@ DOUBLE shannon(DOUBLE p) {
   }
 }
 
-DOUBLE entropy(size_t n, size_t c1, size_t c2) {
+DOUBLE bits(size_t n, size_t c1, size_t c2) {
   assert(n > 0);
   assert(c1 <= n);
   assert(c2 <= n);
   assert(c1 + c2 == n);
-  const DOUBLE k = DOUBLE(1) / n;
-  return (shannon(k * c1) + shannon(k * c2)) * BITS;
+  const DOUBLE p = FLAGS_prior;
+  const DOUBLE k = DOUBLE(1) / (p * 2 + n);
+  return (entropy(k * (p + c1)) + entropy(k * (p + c2))) * BITS * n;
 }
 
-DOUBLE entropy(size_t n, size_t c1, size_t c2, size_t c3, size_t c4) {
+DOUBLE bits(size_t n, size_t c1, size_t c2, size_t c3, size_t c4) {
   assert(n > 0);
   assert(c1 <= n);
   assert(c2 <= n);
   assert(c3 <= n);
   assert(c4 <= n);
   assert(c1 + c2 + c3 + c4 == n);
-  const DOUBLE k = DOUBLE(1) / n;
-  return (shannon(k * c1) + shannon(k * c2) + shannon(k * c3) + shannon(k * c4)) * BITS;
+  const DOUBLE p = FLAGS_prior;
+  const DOUBLE k = DOUBLE(1) / (p * 4 + n);
+  return (entropy(k * (p + c1)) + entropy(k * (p + c2)) + entropy(k * (p + c3)) + entropy(k * (p + c4))) * BITS * n;
 }
 
 int main() {
@@ -156,7 +159,7 @@ int main() {
 
     for (size_t f = 0; f < F; ++f) {
       assert(C[f] <= N);
-      E[f] = entropy(N, C[f], N - C[f]);
+      E[f] = bits(N, C[f], N - C[f]);
     }
 
     std::vector<std::vector<DOUBLE>> EE(F, std::vector<DOUBLE>(F));
@@ -169,22 +172,24 @@ int main() {
         assert(cc[2] <= N);
         assert(cc[3] <= N);
         assert(cc[0] + cc[1] + cc[2] + cc[3] == N);
-        EE[fi][fj] = EE[fj][fi] = entropy(N, cc[0], cc[1], cc[2], cc[3]);
+        EE[fi][fj] = EE[fj][fi] = bits(N, cc[0], cc[1], cc[2], cc[3]);
       }
     }
 
-    fprintf(stderr, "\b\b\b\b, entropy done ...");
+    fprintf(stderr, "\b\b\b\b, bits done ...");
 
     for (size_t fi = 0; fi + 1 < F; ++fi) {
       for (size_t fj = fi + 1; fj < F; ++fj) {
-        if (!((EE[fi][fj] < E[fi] + E[fj] + EPS))) {
-          std::cerr << fi << ' ' << fj << ": " << C[fi] << ' ' << C[fj] << ", " << CC[fi][fj][0] << ' '
-                    << CC[fi][fj][1] << ' ' << CC[fi][fj][2] << ' ' << CC[fi][fj][3] << ": " << E[fi] << ' '
-                    << E[fj] << ' ' << EE[fi][fj] << std::endl;
+        if (!FLAGS_prior) {
+          if (!((EE[fi][fj] < E[fi] + E[fj] + EPS))) {
+            std::cerr << fi << ' ' << fj << ": " << C[fi] << ' ' << C[fj] << ", " << CC[fi][fj][0] << ' '
+                      << CC[fi][fj][1] << ' ' << CC[fi][fj][2] << ' ' << CC[fi][fj][3] << ": " << E[fi] << ' '
+                      << E[fj] << ' ' << EE[fi][fj] << std::endl;
+          }
+          assert(EE[fi][fj] < E[fi] + E[fj] + EPS);
         }
-        assert(EE[fi][fj] < E[fi] + E[fj] + EPS);
-        const DOUBLE score = (E[fi] + E[fj] - EE[fi][fj]);
-        if (score > 1e-3) {
+        const DOUBLE gain = (E[fi] + E[fj] - EE[fi][fj]);
+        if (gain > FLAGS_gain_threshold) {
           std::cout << (E[fi] + E[fj] - EE[fi][fj]) << '\t' << feature[fi] << '\t' << feature[fj] << std::endl;
         }
       }
