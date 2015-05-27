@@ -78,7 +78,11 @@ struct InsightResponse {
   double score;
   std::string description;
   std::unique_ptr<insight::AbstractBase> insight;
+  InsightResponse() = default;
   InsightResponse(const InsightsOutput& input, size_t index) {
+    Prepare(input, index);
+  }
+  void Prepare(const InsightsOutput& input, size_t index) {
     if (index) {
       prev_uri = FLAGS_output_uri_prefix + "/?id=" + ToString(index);  // It's 1-based in the URI.
     }
@@ -106,7 +110,25 @@ struct InsightResponse {
   }
 };
 
-struct SmartSessionInfo {};
+struct SmartSessionInfo {
+  std::string foo;
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(foo));
+  }
+};
+
+typedef std::map<std::string, SmartSessionInfo> SmartSessionInfoMap;
+
+struct SmartInsightResponse {
+  std::string foo = "foo";
+  InsightResponse insight;
+  SmartSessionInfoMap sessions;
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(foo), CEREAL_NVP(insight), CEREAL_NVP(sessions));
+  }
+};
 
 int main(int argc, char** argv) {
   ParseDFlags(&argc, &argv);
@@ -156,25 +178,35 @@ int main(int argc, char** argv) {
     }
   });
 
-  WaitableAtomic<SmartSessionInfo> sessions;
+  WaitableAtomic<SmartSessionInfoMap> sessions;
 
   HTTP(FLAGS_port).Register(FLAGS_route + "smart", [&input, &sessions](Request r) {
+    const auto one_based_index = FromString<size_t>(r.url.query["id"]);
     const std::string id_key = "you_are_awesome";
     const std::string& id = r.url.query[id_key];
-    if (id.empty()) {
+    if (id.empty() || !one_based_index || one_based_index > input.insight.size()) {
       // Create new user session ID and redirect to it.
       std::string fresh_id = "";
       for (size_t i = 0; i < 4; ++i) {
         fresh_id += 'a' + rand() % 26;
       }
+      sessions.MutableUse([=](SmartSessionInfoMap& map) {
+        auto& info = map[fresh_id];
+        info.foo = "bar";
+      });
       r("",
         HTTPResponseCode.Found,
         "text/html",
         HTTPHeaders(
-            {{"Location", Printf("%ssmart?%s=%s", FLAGS_route.c_str(), id_key.c_str(), fresh_id.c_str())}}));
+          {{"Location", Printf("%ssmart?%s=%s&id=1", FLAGS_route.c_str(), id_key.c_str(), fresh_id.c_str())}}));
     } else {
       // Smart session browsing.
-      r("Yeah!");
+      SmartInsightResponse payload;
+      payload.insight.Prepare(input, one_based_index - 1);
+      sessions.MutableUse([&](SmartSessionInfoMap& map) {
+        payload.sessions = map;
+      });
+      r(payload, "smart_insight");
     }
   });
 

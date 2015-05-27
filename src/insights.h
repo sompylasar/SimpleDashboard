@@ -135,9 +135,10 @@ struct MutualInformation : AbstractBase {
   void RenderHTML(const std::map<std::string, FeatureInfo>& feature) override {
     using namespace html;
     using bricks::strings::ToString;
-    TEXT(bricks::strings::Printf("<div style='text-align: center; width: 100%%'><h2>%s</h2>vs.<h2>%s</h2></div>",
-                                 lhs.c_str(),
-                                 rhs.c_str()));
+    TEXT(
+        bricks::strings::Printf("<div style='text-align: center; width: 100%%'><h2>%s</h2>vs.<h2>%s</h2></div>",
+                                lhs.c_str(),
+                                rhs.c_str()));
     {
       TABLE table({{"border", "0"}, {"align", "center"}, {"cellspacing", "24"}});
       TR tr;
