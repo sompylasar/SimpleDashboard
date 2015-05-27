@@ -48,6 +48,14 @@ using bricks::strings::ToString;
 using bricks::FileSystem;
 using bricks::WaitableAtomic;
 
+std::string RandomString(const size_t length = 8) {
+  std::string s;
+  for (size_t i = 0; i < length; ++i) {
+    s += 'a' + rand() % 26;
+  }
+  return s;
+}
+
 struct TopLevelResponse {
   std::string SMART_BROWSE_URI;
   size_t total;
@@ -138,6 +146,8 @@ struct SmartSessionInfo {
   std::vector<size_t> history;
   std::set<std::set<std::string>> filters;
 
+  std::map<std::string, std::set<std::set<std::string>>> actions;
+
   size_t current_insight_index = static_cast<size_t>(-1);
 
   operator bool() const { return current_insight_index != static_cast<size_t>(-1); }
@@ -146,6 +156,12 @@ struct SmartSessionInfo {
                   const std::string& action,
                   SmartInsightResponse& response,
                   const std::string& current_id_key) {
+    // Apply action by augmenting the set of filters.
+    for (const auto filter : actions[action]) {
+      filters.insert(filter);
+    }
+
+    // Current browsing.
     current_insight_index = static_cast<size_t>(-1);
     std::set<size_t> history_as_set(history.begin(), history.end());
     size_t i = 0;
@@ -156,11 +172,6 @@ struct SmartSessionInfo {
       ++i;
     }
     if (current_insight_index != static_cast<size_t>(-1)) {
-      response.navigation.emplace_back(
-          Navigation{"Next",
-                     FLAGS_output_uri_prefix + FLAGS_route +
-                         Printf("smart?%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
-      // TODO(dkorolev): Add navigation over `info.history` here.
       history.push_back(current_insight_index);
       // Grab the tags of this particular insight.
       std::vector<std::string> tags;
@@ -170,9 +181,41 @@ struct SmartSessionInfo {
         tags.push_back(cit->second.tag);
         assert(input.tag.find(cit->second.tag) != input.tag.end());
       });
-      for (const auto& t : tags) {
-        response.navigation.emplace_back(Navigation{"TAG", t});
-      }
+      assert(tags.size() == 2u);  // Because we can.
+
+      // Generate navigation actions.
+      const std::string action_a = RandomString();
+      const std::string action_b = RandomString();
+      const std::string action_a_b = RandomString();
+      const std::string action_ab = RandomString();
+      actions[action_a].insert(std::set<std::string>(tags.begin(), tags.begin() + 1));
+      actions[action_b].insert(std::set<std::string>(tags.begin() + 1, tags.end()));
+      actions[action_ab].insert(std::set<std::string>(tags.begin(), tags.end()));
+      actions[action_a_b].insert(std::set<std::string>(tags.begin(), tags.begin() + 1));
+      actions[action_a_b].insert(std::set<std::string>(tags.begin() + 1, tags.end()));
+
+      // Populate the navigation links.
+      const std::string P = FLAGS_output_uri_prefix + FLAGS_route;
+      response.navigation.emplace_back(
+          Navigation{"Bring it on", P + Printf("smart?%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
+
+      response.navigation.emplace_back(Navigation{
+          "Filter out the (" + tags[0] + ", " + tags[1] + ") insights.",
+          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_ab});
+
+      response.navigation.emplace_back(Navigation{
+          "Filter out (" + tags[0] + ") insights.",
+          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a});
+
+      response.navigation.emplace_back(Navigation{
+          "Filter out (" + tags[1] + ") insights.",
+          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_b});
+
+      response.navigation.emplace_back(Navigation{
+          "Filter out all ( " + tags[0] + ") and all (" + tags[1] + ") insights.",
+          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a_b});
+
+      // TODO(dkorolev): Add navigation over `info.history` here.
     }
   }
 
@@ -237,10 +280,7 @@ int main(int argc, char** argv) {
     const std::string& action = r.url.query["action"];
     if (id.empty()) {
       // Create new user session ID and redirect to it.
-      std::string fresh_id = "";
-      for (size_t i = 0; i < 4; ++i) {
-        fresh_id += 'a' + rand() % 26;
-      }
+      const std::string fresh_id = RandomString();
       r("",
         HTTPResponseCode.Found,
         "text/html",
