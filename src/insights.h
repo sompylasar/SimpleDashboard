@@ -31,7 +31,7 @@ SOFTWARE.
 
 // The data structure to gather aggregated info across the sessions within the same realm,
 // for insights generation, ranking, visualization and further filtering.
-struct PreInsights {
+struct InsightsInput {
   // Tags group features into similar ones, for bulk filtering.
   struct TagInfo {
     std::string name;  // A human-readable name.
@@ -73,7 +73,7 @@ struct PreInsights {
       ar(CEREAL_NVP(description), CEREAL_NVP(tag), CEREAL_NVP(feature), CEREAL_NVP(session));
     }
   };
-  // PreInsights is a collection of realms.
+  // InsightsInput is a collection of realms.
   std::vector<Realm> realm;
   template <typename A>
   void serialize(A& ar) {

@@ -333,11 +333,12 @@ struct Splitter {
           [this, &db](typename DB::T_DATA data) {
             const std::vector<int> second_marks({5, 10, 15, 30, 60, 120, 300});
             // Generate input data for insights.
-            PreInsights payload;
+            InsightsInput payload;
             // Create one and only realm so far.
             payload.realm.resize(payload.realm.size() + 1);
-            PreInsights::Realm& realm = payload.realm.front();
-            realm.description = "One and only realm. TODO(dkorolev): Bracketing, grouping, time windows.";
+            InsightsInput::Realm& realm = payload.realm.front();
+            // TODO(dkorolev): Bracketing, grouping, time windows.
+            realm.description = "One and only realm.";
             // Explain time features.
             realm.tag["T"].name = "Session length";
             const auto& accessor = yoda::MatrixEntry<AggregatedSessionInfo>::Accessor(data);
@@ -353,7 +354,7 @@ struct Splitter {
                 // Emit the information about this session, in a way that makes it
                 // comparable with other sessions within the same realm.
                 realm.session.resize(realm.session.size() + 1);
-                PreInsights::Session& output_session = realm.session.back();
+                InsightsInput::Session& output_session = realm.session.back();
                 output_session.key = individual_session.sid;
                 const int seconds = static_cast<int>(individual_session.number_of_seconds);
                 for (const auto t : second_marks) {

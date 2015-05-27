@@ -35,37 +35,51 @@ SOFTWARE.
 using bricks::FileSystem;
 using namespace bricks::strings;
 
-DEFINE_string(input, "pre_insights.json", "");
+DEFINE_string(input, "insights_input.json", "");
 DEFINE_double(prior, 0.5, "");
 
-/*
-
 typedef long double DOUBLE;
+const DOUBLE EPS = 1e-8;
+const DOUBLE BITS = std::log(DOUBLE(0.5));  // Represent entropy in bits.
 
-DOUBLE dE(DOUBLE p) {
-  assert(p >= 0.0 && p <= 1.0 + 1e-6);
-  if (p > 1e-6 && p < 1.0) {
+DOUBLE shannon(DOUBLE p) {
+  assert(p >= 0.0 && p <= 1.0 + EPS);
+  if (p > EPS && p < 1.0) {
     return p * std::log(p);
   } else {
-    return 0.0;
+    return 0;
   }
 }
 
-DOUBLE E(DOUBLE p1, DOUBLE p2) { return std::log(0.5) * (dE(p1) + dE(p2)); }
-
-DOUBLE E(DOUBLE p1, DOUBLE p2, DOUBLE p3, DOUBLE p4) {
-  return std::log(0.5) * (dE(p1) + dE(p2) + dE(p3) + dE(p4));
+DOUBLE entropy(size_t n, size_t c1, size_t c2) {
+  assert(n > 0);
+  assert(c1 <= n);
+  assert(c2 <= n);
+  assert(c1 + c2 == n);
+  const DOUBLE k = DOUBLE(1) / n;
+  return (shannon(k * c1) + shannon(k * c2)) * BITS;
 }
-*/
+
+DOUBLE entropy(size_t n, size_t c1, size_t c2, size_t c3, size_t c4) {
+  assert(n > 0);
+  assert(c1 <= n);
+  assert(c2 <= n);
+  assert(c3 <= n);
+  assert(c4 <= n);
+  assert(c1 + c2 + c3 + c4 == n);
+  const DOUBLE k = DOUBLE(1) / n;
+  return (shannon(k * c1) + shannon(k * c2) + shannon(k * c3) + shannon(k * c4)) * BITS;
+}
 
 int main() {
   fprintf(stderr, "Reading '%s' ...", FLAGS_input.c_str());
   fflush(stderr);
-  const auto input = ParseJSON<PreInsights>(FileSystem::ReadFileAsString(FLAGS_input));
+  const auto input = ParseJSON<InsightsInput>(FileSystem::ReadFileAsString(FLAGS_input));
   fprintf(stderr, "\b\b\b: Done, %d realm(s).\n", static_cast<int>(input.realm.size()));
 
   for (const auto& realm : input.realm) {
-    const size_t N = realm.session.size();
+    const auto& S = realm.session;
+    const size_t N = S.size();
     fprintf(stderr, "Realm '%s', %d sessions ...", realm.description.c_str(), static_cast<int>(N));
     fflush(stderr);
     // Build indexes and reverse indexes for features and tags.
@@ -111,8 +125,8 @@ int main() {
       // Last session index that had this feature set. Start from infinity.
       std::vector<size_t> q(F);
       memset(&q[0], 0xff, F * sizeof(size_t));
-      for (size_t sid = 0; sid < realm.session.size(); ++sid) {
-        for (const auto& f : realm.session[sid].feature) {
+      for (size_t sid = 0; sid < N; ++sid) {
+        for (const auto& f : S[sid].feature) {
           const auto cit = feature_index.find(f);
           assert(cit != feature_index.end());
           assert(cit->second < F);
@@ -137,13 +151,42 @@ int main() {
       }
     }
 
+    // Compute entropies.
+    std::vector<DOUBLE> E(F);
+
     for (size_t f = 0; f < F; ++f) {
       assert(C[f] <= N);
+      E[f] = entropy(N, C[f], N - C[f]);
     }
 
+    std::vector<std::vector<DOUBLE>> EE(F, std::vector<DOUBLE>(F));
+
     for (size_t fi = 0; fi + 1 < F; ++fi) {
-      for (size_t fj = 0; fj + 1 < F; ++fj) {
-        // ...
+      for (size_t fj = fi + 1; fj < F; ++fj) {
+        const auto& cc = CC[fi][fj];
+        assert(cc[0] <= N);
+        assert(cc[1] <= N);
+        assert(cc[2] <= N);
+        assert(cc[3] <= N);
+        assert(cc[0] + cc[1] + cc[2] + cc[3] == N);
+        EE[fi][fj] = EE[fj][fi] = entropy(N, cc[0], cc[1], cc[2], cc[3]);
+      }
+    }
+
+    fprintf(stderr, "\b\b\b\b, entropy done ...");
+
+    for (size_t fi = 0; fi + 1 < F; ++fi) {
+      for (size_t fj = fi + 1; fj < F; ++fj) {
+        if (!((EE[fi][fj] < E[fi] + E[fj] + EPS))) {
+          std::cerr << fi << ' ' << fj << ": " << C[fi] << ' ' << C[fj] << ", " << CC[fi][fj][0] << ' '
+                    << CC[fi][fj][1] << ' ' << CC[fi][fj][2] << ' ' << CC[fi][fj][3] << ": " << E[fi] << ' '
+                    << E[fj] << ' ' << EE[fi][fj] << std::endl;
+        }
+        assert(EE[fi][fj] < E[fi] + E[fj] + EPS);
+        const DOUBLE score = (E[fi] + E[fj] - EE[fi][fj]);
+        if (score > 1e-3) {
+          std::cout << (E[fi] + E[fj] - EE[fi][fj]) << '\t' << feature[fi] << '\t' << feature[fj] << std::endl;
+        }
       }
     }
 
