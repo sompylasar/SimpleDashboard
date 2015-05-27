@@ -27,10 +27,11 @@ SOFTWARE.
 #include "insights.h"
 CEREAL_REGISTER_TYPE(insight::MutualInformation);
 
-#include "../../Current/Bricks/strings/util.h"
+#include "../../Current/Bricks/dflags/dflags.h"
 #include "../../Current/Bricks/file/file.h"
 #include "../../Current/Bricks/net/api/api.h"
-#include "../../Current/Bricks/dflags/dflags.h"
+#include "../../Current/Bricks/strings/util.h"
+#include "../../Current/Bricks/waitable_atomic/waitable_atomic.h"
 
 DEFINE_int32(port, 3000, "Port to spawn the browser on.");
 DEFINE_string(route, "/", "The route to serve the browser on.");
@@ -38,23 +39,27 @@ DEFINE_string(output_uri_prefix, "http://localhost", "The prefix for the URI-s o
 
 DEFINE_string(input, "data/insights.json", "Path to the file containing the insights to browse.");
 
+using bricks::strings::Printf;
 using bricks::strings::FromString;
 using bricks::strings::ToString;
 using bricks::FileSystem;
+using bricks::WaitableAtomic;
 
 struct TopLevelResponse {
+  std::string SMART_BROWSE_URI;
   size_t total;
   std::string browse_uri;
   std::string browse_all_uri;
   TopLevelResponse(size_t i) : total(i) {
     if (total) {
+      SMART_BROWSE_URI = FLAGS_output_uri_prefix + "/smart";
       browse_uri = FLAGS_output_uri_prefix + "/?id=1";
       browse_all_uri = FLAGS_output_uri_prefix + "/?id=all";
     }
   }
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(total), CEREAL_NVP(browse_uri), CEREAL_NVP(browse_all_uri));
+    ar(CEREAL_NVP(SMART_BROWSE_URI), CEREAL_NVP(total), CEREAL_NVP(browse_uri), CEREAL_NVP(browse_all_uri));
   }
 };
 
@@ -93,6 +98,8 @@ struct InsightResponse {
   }
 };
 
+struct SmartSessionInfo {};
+
 int main(int argc, char** argv) {
   ParseDFlags(&argc, &argv);
 
@@ -113,6 +120,28 @@ int main(int argc, char** argv) {
       r(input, "everything");
     } else {
       r(TopLevelResponse(input.insight.size()));
+    }
+  });
+
+  WaitableAtomic<SmartSessionInfo> sessions;
+
+  HTTP(FLAGS_port).Register(FLAGS_route + "smart", [&input, &sessions](Request r) {
+    const std::string id_key = "you_are_awesome";
+    const std::string& id = r.url.query[id_key];
+    if (id.empty()) {
+      // Create new user session ID and redirect to it.
+      std::string fresh_id = "";
+      for (size_t i = 0; i < 4; ++i) {
+        fresh_id += 'a' + rand() % 26;
+      }
+      r("",
+        HTTPResponseCode.Found,
+        "text/html",
+        HTTPHeaders(
+            {{"Location", Printf("%ssmart?%s=%s", FLAGS_route.c_str(), id_key.c_str(), fresh_id.c_str())}}));
+    } else {
+      // Smart session browsing.
+      r("Yeah!");
     }
   });
 

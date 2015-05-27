@@ -37,10 +37,11 @@ SOFTWARE.
 #include "types.h"
 #include "helpers.h"
 
-#include "../../Current/Bricks/template/metaprogramming.h"
 #include "../../Current/Bricks/dflags/dflags.h"
-#include "../../Current/Bricks/time/chrono.h"
 #include "../../Current/Bricks/strings/printf.h"
+#include "../../Current/Bricks/template/metaprogramming.h"
+#include "../../Current/Bricks/time/chrono.h"
+#include "../../Current/Bricks/waitable_atomic/waitable_atomic.h"
 #include "../../Current/Sherlock/sherlock.h"
 #include "../../Current/Sherlock/yoda/yoda.h"
 
