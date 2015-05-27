@@ -27,6 +27,8 @@ SOFTWARE.
 #include "insights.h"
 CEREAL_REGISTER_TYPE(insight::MutualInformation);
 
+#include "html.h"
+
 #include "../../Current/Bricks/dflags/dflags.h"
 #include "../../Current/Bricks/file/file.h"
 #include "../../Current/Bricks/net/api/api.h"
@@ -48,18 +50,24 @@ using bricks::WaitableAtomic;
 struct TopLevelResponse {
   std::string SMART_BROWSE_URI;
   size_t total;
+  std::string HTML_BROWSE_URI;
   std::string browse_uri;
   std::string browse_all_uri;
   TopLevelResponse(size_t i) : total(i) {
     if (total) {
       SMART_BROWSE_URI = FLAGS_output_uri_prefix + "/smart";
+      HTML_BROWSE_URI = FLAGS_output_uri_prefix + "/?id=1&html=yes";
       browse_uri = FLAGS_output_uri_prefix + "/?id=1";
       browse_all_uri = FLAGS_output_uri_prefix + "/?id=all";
     }
   }
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(SMART_BROWSE_URI), CEREAL_NVP(total), CEREAL_NVP(browse_uri), CEREAL_NVP(browse_all_uri));
+    ar(CEREAL_NVP(SMART_BROWSE_URI),
+       CEREAL_NVP(HTML_BROWSE_URI),
+       CEREAL_NVP(total),
+       CEREAL_NVP(browse_uri),
+       CEREAL_NVP(browse_all_uri));
   }
 };
 
@@ -113,7 +121,32 @@ int main(int argc, char** argv) {
   HTTP(FLAGS_port).Register(FLAGS_route, [&input](Request r) {
     const auto one_based_index = FromString<size_t>(r.url.query["id"]);
     if (one_based_index && one_based_index <= input.insight.size()) {
-      r(InsightResponse(input, one_based_index - 1));
+      if (!r.url.query["html"].empty()) {
+        using namespace html;
+        HTML html_scope;
+        {  // HEAD.
+          HEAD head;
+          TITLE("Insights Visualization Alpha");
+        }
+        {  // TABLE, TR.
+          TABLE table({{"border", "0"}, {"align", "center"}, {"cellpadding", "8"}});
+          TR r({{"align", "center"}});
+          if (one_based_index > 1) {
+            TD d;
+            A a({{"href", FLAGS_route + "?id=" + ToString(one_based_index - 1) + "&html=yes"}});
+            TEXT("Previous insight");
+          }
+          if (one_based_index < input.insight.size()) {
+            TD d;
+            A a({{"href", FLAGS_route + "?id=" + ToString(one_based_index + 1) + "&html=yes"}});
+            TEXT("Next insight");
+          }
+        }  // TABLE, TR.
+
+        r(html_scope.AsString(), HTTPResponseCode.OK, "text/html");
+      } else {
+        r(InsightResponse(input, one_based_index - 1));
+      }
     } else if (r.url.query["id"] == "all") {
       r(input.insight, "insights");
     } else if (r.url.query["id"] == "everything") {
