@@ -1,8 +1,10 @@
 # For SimpleDashboard.
 build
+data
 
 # From KnowSheet.
 .noshit
+.current
 
 core
 *.h.gch
