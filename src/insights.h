@@ -135,97 +135,88 @@ struct MutualInformation : AbstractBase {
   void RenderHTML(const std::map<std::string, FeatureInfo>& feature) override {
     using namespace html;
     using bricks::strings::ToString;
-    if (false) {  // Feature names.
-      TABLE table({{"border", "0"}, {"align", "center"}, {"cellpadding", "8"}});
-      {
-        TR r({{"align", "center"}});
-        TD d;
-        B("LHS ");
-        // TEXT(lhs);
-        TEXT(feature.find(lhs)->second.YesText());
-        std::cerr << lhs << ' ' << feature.find(lhs)->second.YesText() << std::endl;
-      }
-      {
-        TR r({{"align", "center"}});
-        TD d;
-        B("RHS ");
-        TEXT(feature.find(rhs)->second.YesText());
-        //        TEXT(rhs);
-      }
-    }
-    TEXT("<br>");
+    TEXT(bricks::strings::Printf("<div style='text-align: center; width: 100%'><h2>%s</h2>vs.<h2>%s</h2></div>",
+                                 lhs.c_str(),
+                                 rhs.c_str()));
     {
-      // Absolute counters A.
-      TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
+      TABLE table({{"border", "0"}, {"align", "center"}, {"cellspacing", "24"}});
+      TR tr;
+
       {
-        TR r({{"align", "center"}});
-        { TD d; }
+        TD td;
+        // Absolute counters A.
+        TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
         {
-          TD d;
-          B("YES");
-          PRE(feature.find(lhs)->second.YesText());
+          TR r({{"align", "center"}});
+          { TD d; }
+          {
+            TD d;
+            B("YES");
+            PRE(feature.find(lhs)->second.YesText());
+          }
+          {
+            TD d;
+            B("NO");
+            PRE(feature.find(lhs)->second.NoText());
+          }
         }
         {
-          TD d;
-          B("NO");
-          PRE(feature.find(lhs)->second.NoText());
+          TR r({{"align", "center"}});
+          {
+            TD d;
+            B("A");
+          }
+          {
+            TD d;
+            TEXT("<font size=+2>");
+            PRE(ToString(counters.lhs));
+            TEXT("</font>");
+          }
+          {
+            TD d;
+            TEXT("<font size=+2>");
+            PRE(ToString(counters.N - counters.lhs));
+            TEXT("</font>");
+          }
         }
       }
+      // TEXT("<br>");
       {
-        TR r({{"align", "center"}});
+        TD td;
+        // Absolute counters B.
+        TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
         {
-          TD d;
-          B("A");
+          TR r({{"align", "center"}});
+          { TD d; }
+          {
+            TD d;
+            B("YES");
+            PRE(feature.find(rhs)->second.YesText());
+          }
+          {
+            TD d;
+            B("NO");
+            PRE(feature.find(rhs)->second.NoText());
+          }
         }
         {
-          TD d;
-          TEXT("<font size=+2>");
-          PRE(ToString(counters.lhs));
-          TEXT("</font>");
-        }
-        {
-          TD d;
-          TEXT("<font size=+2>");
-          PRE(ToString(counters.N - counters.lhs));
-          TEXT("</font>");
-        }
-      }
-    }
-    TEXT("<br>");
-    {
-      // Absolute counters B.
-      TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
-      {
-        TR r({{"align", "center"}});
-        { TD d; }
-        {
-          TD d;
-          B("YES");
-          PRE(feature.find(rhs)->second.YesText());
-        }
-        {
-          TD d;
-          B("NO");
-          PRE(feature.find(rhs)->second.NoText());
-        }
-      }
-      {
-        TR r({{"align", "center"}});
-        {
-          TD d;
-          B("B");
-        }
-        {
-          TD d;
-          TEXT("<font size=+2>");
-          PRE(ToString(counters.rhs));
-          TEXT("</font>");
-        }
-        {
-          TD d;
-          TEXT("<font size=+2>");
-          PRE(ToString(counters.N - counters.rhs));
-          TEXT("</font>");
+          TR r({{"align", "center"}});
+          {
+            TD d;
+            B("B");
+          }
+          {
+            TD d;
+            TEXT("<font size=+2>");
+            PRE(ToString(counters.rhs));
+            TEXT("</font>");
+          }
+          {
+            TD d;
+            TEXT("<font size=+2>");
+            PRE(ToString(counters.N - counters.rhs));
+            TEXT("</font>");
+          }
         }
       }
     }
