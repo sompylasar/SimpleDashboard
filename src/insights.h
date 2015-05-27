@@ -26,8 +26,10 @@ SOFTWARE.
 #define INSIGHTS_H
 
 #include "helpers.h"
+#include "html.h"
 
 #include "../../Current/Bricks/cerealize/cerealize.h"
+#include "../../Current/Bricks/strings/util.h"
 
 // Tags group features into similar ones, for bulk filtering.
 struct TagInfo {
@@ -96,6 +98,7 @@ struct AbstractBase {
   double score;  // The higher, the better.
   virtual ~AbstractBase() = default;
   virtual std::string Description() = 0;
+  virtual void RenderHTML() = 0;
   virtual void EnumerateFeatures(std::function<void(const std::string&)>) = 0;
   template <typename A>
   void serialize(A& ar) {
@@ -127,6 +130,119 @@ struct MutualInformation : AbstractBase {
   std::string rhs;
   Counters counters;
   std::string Description() override { return "WE HAZ INSIGHTS!"; }
+  void RenderHTML() override {
+    using namespace html;
+    using bricks::strings::ToString;
+    if (false) {  // Feature names.
+      TABLE table({{"border", "0"}, {"align", "center"}, {"cellpadding", "8"}});
+      {
+        TR r({{"align", "center"}});
+        TD d;
+        B("LHS ");
+        TEXT(lhs);
+      }
+      {
+        TR r({{"align", "center"}});
+        TD d;
+        B("RHS ");
+        TEXT(rhs);
+      }
+    }
+    {
+      // Absolute counters.
+      TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
+      {
+        TR r({{"align", "center"}});
+        { TD d; }
+        {
+          TD d;
+          B("Number of sessions having this property.");
+        }
+        {
+          TD d;
+          B("Number of sessions not having this property.");
+        }
+      }
+      {
+        TR r({{"align", "center"}});
+        {
+          TD d;
+          B("LHS");
+          PRE((" \" " + lhs + " \" "));
+        }
+        {
+          TD d;
+          PRE(ToString(counters.lhs));
+        }
+        {
+          TD d;
+          PRE(ToString(counters.N - counters.lhs));
+        }
+      }
+      {
+        TR r({{"align", "center"}});
+        {
+          TD d;
+          B("RHS");
+          PRE((" \" " + rhs + " \" "));
+        }
+        {
+          TD d;
+          PRE(ToString(counters.rhs));
+        }
+        {
+          TD d;
+          PRE(ToString(counters.N - counters.rhs));
+        }
+      }
+    }
+    {
+      // Cross-counters.
+      TABLE table({{"border", "1"}, {"align", "center"}, {"cellpadding", "8"}});
+      {
+        TR r({{"align", "center"}});
+        { TD d; }
+        {
+          TD d;
+          B("Has RHS");
+        }
+        {
+          TD d;
+          B("Does not have RHS");
+        }
+      }
+      {
+        TR r({{"align", "center"}});
+        {
+          TD d;
+          B("Has LHS");
+        }
+        {
+          TD d;
+          PRE(ToString(counters.yy));
+        }
+        {
+          TD d;
+          PRE(ToString(counters.yn));
+        }
+      }
+      {
+        TR r({{"align", "center"}});
+        {
+          TD d;
+          B("Does not have LHS");
+        }
+        {
+          TD d;
+          PRE(ToString(counters.ny));
+        }
+        {
+          TD d;
+          PRE(ToString(counters.nn));
+        }
+      }
+    }
+  }
   virtual void EnumerateFeatures(std::function<void(const std::string&)> f) {
     f(lhs);
     f(rhs);

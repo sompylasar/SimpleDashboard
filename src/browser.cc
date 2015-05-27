@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
             TEXT("Next insight");
           }
         }  // TABLE, TR.
-
+        input.insight[one_based_index - 1]->RenderHTML();
         r(html_scope.AsString(), HTTPResponseCode.OK, "text/html");
       } else {
         r(InsightResponse(input, one_based_index - 1));
