@@ -57,23 +57,26 @@ std::string RandomString(const size_t length = 8) {
 }
 
 struct TopLevelResponse {
+  std::string SMART_HTML_BROWSE_URI;
+  std::string HTML_BROWSE_URI;
   std::string SMART_BROWSE_URI;
   size_t total;
-  std::string HTML_BROWSE_URI;
   std::string browse_uri;
   std::string browse_all_uri;
   TopLevelResponse(size_t i) : total(i) {
     if (total) {
       SMART_BROWSE_URI = FLAGS_output_uri_prefix + "/smart";
       HTML_BROWSE_URI = FLAGS_output_uri_prefix + "/?id=1&html=yes";
+      SMART_HTML_BROWSE_URI = FLAGS_output_uri_prefix + "/smart?html=yes";
       browse_uri = FLAGS_output_uri_prefix + "/?id=1";
       browse_all_uri = FLAGS_output_uri_prefix + "/?id=all";
     }
   }
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(SMART_BROWSE_URI),
+    ar(CEREAL_NVP(SMART_HTML_BROWSE_URI),
        CEREAL_NVP(HTML_BROWSE_URI),
+       CEREAL_NVP(SMART_BROWSE_URI),
        CEREAL_NVP(total),
        CEREAL_NVP(browse_uri),
        CEREAL_NVP(browse_all_uri));
@@ -132,13 +135,13 @@ struct Navigation {
 };
 
 struct SmartInsightResponse {
-  std::string status;
+  bool done;
   std::vector<Navigation> navigation;
   InsightResponse insight;
   SmartSessionInfoMap sessions;
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(status), CEREAL_NVP(navigation), CEREAL_NVP(insight), CEREAL_NVP(sessions));
+    ar(CEREAL_NVP(done), CEREAL_NVP(navigation), CEREAL_NVP(insight), CEREAL_NVP(sessions));
   }
 };
 
@@ -178,7 +181,8 @@ struct SmartSessionInfo {
   void TakeAction(const InsightsOutput& input,
                   const std::string& action,
                   SmartInsightResponse& response,
-                  const std::string& current_id_key) {
+                  const std::string& current_id_key,
+                  bool as_html) {
     // Apply action by augmenting the set of filters.
     for (const auto filter : actions[action]) {
       filters.insert(filter);
@@ -218,25 +222,26 @@ struct SmartSessionInfo {
       actions[action_a_b].insert(std::set<std::string>(tags.begin() + 1, tags.end()));
 
       // Populate the navigation links.
-      const std::string P = FLAGS_output_uri_prefix + FLAGS_route;
+      const std::string P = FLAGS_output_uri_prefix + FLAGS_route + "smart?html=" + (as_html ? "yes" : "");
+
       response.navigation.emplace_back(
-          Navigation{"Bring it on", P + Printf("smart?%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
+          Navigation{"Bring it on", P + Printf("&%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
 
-      response.navigation.emplace_back(Navigation{
-          "Filter out the (" + tags[0] + ", " + tags[1] + ") insights.",
-          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_ab});
+      response.navigation.emplace_back(
+          Navigation{"Filter out the (" + tags[0] + ", " + tags[1] + ") insights.",
+                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_ab});
 
-      response.navigation.emplace_back(Navigation{
-          "Filter out (" + tags[0] + ") insights.",
-          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a});
+      response.navigation.emplace_back(
+          Navigation{"Filter out (" + tags[0] + ") insights.",
+                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a});
 
-      response.navigation.emplace_back(Navigation{
-          "Filter out (" + tags[1] + ") insights.",
-          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_b});
+      response.navigation.emplace_back(
+          Navigation{"Filter out (" + tags[1] + ") insights.",
+                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_b});
 
-      response.navigation.emplace_back(Navigation{
-          "Filter out all (" + tags[0] + ") and all (" + tags[1] + ") insights.",
-          P + Printf("smart?%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a_b});
+      response.navigation.emplace_back(
+          Navigation{"Filter out all (" + tags[0] + ") and all (" + tags[1] + ") insights.",
+                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a_b});
 
       // TODO(dkorolev): Add navigation over `info.history` here.
     }
@@ -273,7 +278,7 @@ int main(int argc, char** argv) {
           TR r({{"align", "center"}});
           if (one_based_index > 1) {
             TD d;
-            A a({{"href", FLAGS_route + "?id=" + ToString(one_based_index - 1) + "&html=yes"}});
+            A a({{"hjref", FLAGS_route + "?id=" + ToString(one_based_index - 1) + "&html=yes"}});
             TEXT("Previous insight");
           }
           if (one_based_index < input.insight.size()) {
@@ -299,6 +304,7 @@ int main(int argc, char** argv) {
   WaitableAtomic<SmartSessionInfoMap> sessions;
 
   HTTP(FLAGS_port).Register(FLAGS_route + "smart", [&input, &sessions](Request r) {
+    const bool as_html = !r.url.query["html"].empty();
     const std::string& id = r.url.query[FLAGS_id_key];
     const std::string& action = r.url.query["action"];
     if (id.empty()) {
@@ -308,22 +314,58 @@ int main(int argc, char** argv) {
         HTTPResponseCode.Found,
         "text/html",
         HTTPHeaders({{"Location",
-                      Printf("%ssmart?%s=%s", FLAGS_route.c_str(), FLAGS_id_key.c_str(), fresh_id.c_str())}}));
+                      Printf("%ssmart?%s=%s&html=%s",
+                             FLAGS_route.c_str(),
+                             FLAGS_id_key.c_str(),
+                             fresh_id.c_str(),
+                             as_html ? "yes" : "")}}));
     } else {
       // Smart session browsing.
       SmartInsightResponse payload;
       sessions.MutableUse([&](SmartSessionInfoMap& map) {
         auto& info = map[id];
-        info.TakeAction(input, action, payload, id);
+        info.TakeAction(input, action, payload, id, as_html);
         if (info) {
-          payload.status = "ENJOY";
+          payload.done = false;
           payload.insight.Prepare(input, info.current_insight_index);
         } else {
-          payload.status = "YOU ARE AWESOME!";
+          payload.done = true;
         }
         payload.sessions = map;
       });
-      r(payload, "smart_insight");
+      if (!as_html) {
+        r(payload, "smart_insight");
+      } else {
+        using namespace html;
+        HTML html_scope;
+        {  // HEAD.
+          HEAD head;
+          TITLE("Insights Visualization Alpha");
+        }
+        if (payload.done) {
+          TEXT("<h1>You are awesome!</h1>");
+          {
+            A a({{"href", FLAGS_route + "smart?html=yes"}});
+            TEXT("Start over!");
+          }
+        } else {
+          for (const auto& nav : payload.navigation) {
+            TEXT("<p align=center>");
+            A a({{"href", nav.uri}});
+            TEXT(nav.text);
+            TEXT("</p>");
+          }
+          TEXT("<hr>");
+          {
+            TEXT("<p align=center>");
+            A a({{"href", payload.insight.current_uri}});
+            TEXT("[Not yet a] permalink to this insight.");
+            TEXT("</p>");
+          }
+          payload.insight.insight->RenderHTML(input.feature);
+        }
+        r(html_scope.AsString(), HTTPResponseCode.OK, "text/html");
+      }
     }
   });
 
