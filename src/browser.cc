@@ -40,6 +40,7 @@ DEFINE_string(route, "/", "The route to serve the browser on.");
 DEFINE_string(output_uri_prefix, "http://localhost", "The prefix for the URI-s output by the server.");
 
 DEFINE_string(input, "data/insights.json", "Path to the file containing the insights to browse.");
+DEFINE_string(id_key, "you_are_awesome", "The URL parameter name containing smart session token ID.");
 
 using bricks::strings::Printf;
 using bricks::strings::FromString;
@@ -72,6 +73,7 @@ struct TopLevelResponse {
 };
 
 struct InsightResponse {
+  std::string current_uri;  // Permalink.
   std::string prev_uri;
   std::string next_uri;
   std::set<std::string> tags;
@@ -79,10 +81,9 @@ struct InsightResponse {
   std::string description;
   std::unique_ptr<insight::AbstractBase> insight;
   InsightResponse() = default;
-  InsightResponse(const InsightsOutput& input, size_t index) {
-    Prepare(input, index);
-  }
+  InsightResponse(const InsightsOutput& input, size_t index) { Prepare(input, index); }
   void Prepare(const InsightsOutput& input, size_t index) {
+    current_uri = FLAGS_output_uri_prefix + "/?id=" + ToString(index + 1);  // It's 1-based in the URI.
     if (index) {
       prev_uri = FLAGS_output_uri_prefix + "/?id=" + ToString(index);  // It's 1-based in the URI.
     }
@@ -101,7 +102,8 @@ struct InsightResponse {
   }
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(prev_uri),
+    ar(CEREAL_NVP(current_uri),
+       CEREAL_NVP(prev_uri),
        CEREAL_NVP(next_uri),
        CEREAL_NVP(tags),
        CEREAL_NVP(score),
@@ -110,23 +112,73 @@ struct InsightResponse {
   }
 };
 
-struct SmartSessionInfo {
-  std::string foo;
+typedef std::map<std::string, struct SmartSessionInfo> SmartSessionInfoMap;
+
+struct Navigation {
+  std::string text;
+  std::string uri;
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(foo));
+    ar(CEREAL_NVP(text), CEREAL_NVP(uri));
   }
 };
 
-typedef std::map<std::string, SmartSessionInfo> SmartSessionInfoMap;
-
 struct SmartInsightResponse {
-  std::string foo = "foo";
+  std::string status;
+  std::vector<Navigation> navigation;
   InsightResponse insight;
   SmartSessionInfoMap sessions;
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(foo), CEREAL_NVP(insight), CEREAL_NVP(sessions));
+    ar(CEREAL_NVP(status), CEREAL_NVP(navigation), CEREAL_NVP(insight), CEREAL_NVP(sessions));
+  }
+};
+
+struct SmartSessionInfo {
+  std::vector<size_t> history;
+  std::set<std::set<std::string>> filters;
+
+  size_t current_insight_index = static_cast<size_t>(-1);
+
+  operator bool() const { return current_insight_index != static_cast<size_t>(-1); }
+
+  void TakeAction(const InsightsOutput& input,
+                  const std::string& action,
+                  SmartInsightResponse& response,
+                  const std::string& current_id_key) {
+    current_insight_index = static_cast<size_t>(-1);
+    std::set<size_t> history_as_set(history.begin(), history.end());
+    size_t i = 0;
+    while (current_insight_index == static_cast<size_t>(-1) && i < input.insight.size()) {
+      if (!history_as_set.count(i)) {
+        current_insight_index = i;
+      }
+      ++i;
+    }
+    if (current_insight_index != static_cast<size_t>(-1)) {
+      response.navigation.emplace_back(
+          Navigation{"Next",
+                     FLAGS_output_uri_prefix + FLAGS_route +
+                         Printf("smart?%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
+      // TODO(dkorolev): Add navigation over `info.history` here.
+      history.push_back(current_insight_index);
+      // Grab the tags of this particular insight.
+      std::vector<std::string> tags;
+      input.insight[current_insight_index]->EnumerateFeatures([&input, &tags](const std::string& feature) {
+        const auto cit = input.feature.find(feature);
+        assert(cit != input.feature.end());
+        tags.push_back(cit->second.tag);
+        assert(input.tag.find(cit->second.tag) != input.tag.end());
+      });
+      for (const auto& t : tags) {
+        response.navigation.emplace_back(Navigation{"TAG", t});
+      }
+    }
+  }
+
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(history), CEREAL_NVP(filters));
   }
 };
 
@@ -181,29 +233,31 @@ int main(int argc, char** argv) {
   WaitableAtomic<SmartSessionInfoMap> sessions;
 
   HTTP(FLAGS_port).Register(FLAGS_route + "smart", [&input, &sessions](Request r) {
-    const auto one_based_index = FromString<size_t>(r.url.query["id"]);
-    const std::string id_key = "you_are_awesome";
-    const std::string& id = r.url.query[id_key];
-    if (id.empty() || !one_based_index || one_based_index > input.insight.size()) {
+    const std::string& id = r.url.query[FLAGS_id_key];
+    const std::string& action = r.url.query["action"];
+    if (id.empty()) {
       // Create new user session ID and redirect to it.
       std::string fresh_id = "";
       for (size_t i = 0; i < 4; ++i) {
         fresh_id += 'a' + rand() % 26;
       }
-      sessions.MutableUse([=](SmartSessionInfoMap& map) {
-        auto& info = map[fresh_id];
-        info.foo = "bar";
-      });
       r("",
         HTTPResponseCode.Found,
         "text/html",
-        HTTPHeaders(
-          {{"Location", Printf("%ssmart?%s=%s&id=1", FLAGS_route.c_str(), id_key.c_str(), fresh_id.c_str())}}));
+        HTTPHeaders({{"Location",
+                      Printf("%ssmart?%s=%s", FLAGS_route.c_str(), FLAGS_id_key.c_str(), fresh_id.c_str())}}));
     } else {
       // Smart session browsing.
       SmartInsightResponse payload;
-      payload.insight.Prepare(input, one_based_index - 1);
       sessions.MutableUse([&](SmartSessionInfoMap& map) {
+        auto& info = map[id];
+        info.TakeAction(input, action, payload, id);
+        if (info) {
+          payload.status = "ENJOY";
+          payload.insight.Prepare(input, info.current_insight_index);
+        } else {
+          payload.status = "YOU ARE AWESOME!";
+        }
         payload.sessions = map;
       });
       r(payload, "smart_insight");
