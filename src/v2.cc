@@ -570,11 +570,7 @@ int main(int argc, char** argv) {
   // The rest of the logic is handled asynchronously, by the corresponding listeners.
   BlockingParseLogEventsAndInjectIdleEventsFromStandardInput<MidichloriansEvent,
                                                              MidichloriansEventWithTimestamp>(
-      raw, db,
-      /*
-      FLAGS_initial_tick_wait_ms, FLAGS_tick_interval_ms,
-      */
-      FLAGS_port, FLAGS_route);
+      raw, db, FLAGS_port, FLAGS_route);
 
   // Production code should never reach this point.
   // For non-production code, print an explanatory message before terminating.

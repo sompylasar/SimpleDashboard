@@ -37,7 +37,7 @@ CEREAL_REGISTER_TYPE(insight::MutualInformation);
 
 DEFINE_int32(port, 3000, "Port to spawn the browser on.");
 DEFINE_string(route, "/", "The route to serve the browser on.");
-DEFINE_string(output_uri_prefix, "http://localhost", "The prefix for the URI-s output by the server.");
+DEFINE_string(output_uri_prefix, "http://localhost:3000", "The prefix for the URI-s output by the server.");
 
 DEFINE_string(input, "data/insights.json", "Path to the file containing the insights to browse.");
 DEFINE_string(id_key, "you_are_awesome", "The URL parameter name containing smart session token ID.");
@@ -65,11 +65,12 @@ struct TopLevelResponse {
   std::string browse_all_uri;
   TopLevelResponse(size_t i) : total(i) {
     if (total) {
-      SMART_BROWSE_URI = FLAGS_output_uri_prefix + "/smart";
-      HTML_BROWSE_URI = FLAGS_output_uri_prefix + "/?id=1&html=yes";
-      SMART_HTML_BROWSE_URI = FLAGS_output_uri_prefix + "/smart?html=yes";
-      browse_uri = FLAGS_output_uri_prefix + "/?id=1";
-      browse_all_uri = FLAGS_output_uri_prefix + "/?id=all";
+      const std::string P = FLAGS_output_uri_prefix + FLAGS_route;
+      SMART_BROWSE_URI = P + "smart";
+      HTML_BROWSE_URI = P + "?id=1&html=yes";
+      SMART_HTML_BROWSE_URI = P + "smart?html=yes";
+      browse_uri = P + "?id=1";
+      browse_all_uri = P + "?id=all";
     }
   }
   template <typename A>
@@ -94,12 +95,13 @@ struct InsightResponse {
   InsightResponse() = default;
   InsightResponse(const InsightsOutput& input, size_t index) { Prepare(input, index); }
   void Prepare(const InsightsOutput& input, size_t index) {
-    current_uri = FLAGS_output_uri_prefix + "/?id=" + ToString(index + 1);  // It's 1-based in the URI.
+    const std::string P = FLAGS_output_uri_prefix + FLAGS_route;
+    current_uri = P + "?id=" + ToString(index + 1);  // It's 1-based in the URI.
     if (index) {
-      prev_uri = FLAGS_output_uri_prefix + "/?id=" + ToString(index);  // It's 1-based in the URI.
+      prev_uri = P + "?id=" + ToString(index);  // It's 1-based in the URI.
     }
     if (index + 1 < input.insight.size()) {
-      next_uri = FLAGS_output_uri_prefix + "/?id=" + ToString(index + 2);  // It's 1-based in the URI.
+      next_uri = P + "?id=" + ToString(index + 2);  // It's 1-based in the URI.
     }
     score = input.insight[index]->score;
     input.insight[index]->EnumerateFeatures([this, &input](const std::string& feature) {
@@ -310,15 +312,9 @@ int main(int argc, char** argv) {
     if (id.empty()) {
       // Create new user session ID and redirect to it.
       const std::string fresh_id = RandomString();
-      const std::string P =
-        FLAGS_output_uri_prefix +
-        FLAGS_route + "smart?" +
-        FLAGS_id_key + '=' + fresh_id +
-        "&html=" +(as_html ? "yes" : "");
-      r("",
-        HTTPResponseCode.Found,
-        "text/html",
-        HTTPHeaders({{"Location", P}}));
+      const std::string P = FLAGS_output_uri_prefix + FLAGS_route + "smart?" + FLAGS_id_key + '=' + fresh_id +
+                            "&html=" + (as_html ? "yes" : "");
+      r("", HTTPResponseCode.Found, "text/html", HTTPHeaders({{"Location", P}}));
     } else {
       // Smart session browsing.
       SmartInsightResponse payload;
@@ -345,7 +341,7 @@ int main(int argc, char** argv) {
         if (payload.done) {
           TEXT("<h1>You are awesome!</h1>");
           {
-            A a({{"href", FLAGS_route + "smart?html=yes"}});
+            A a({{"href", FLAGS_output_uri_prefix + FLAGS_route + "smart?html=yes"}});
             TEXT("Start over!");
           }
         } else {
