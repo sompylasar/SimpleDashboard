@@ -75,8 +75,8 @@ struct State {
 template <typename HTTP_BODY_BASE_TYPE, typename ENTRY_TYPE, typename YODA>
 void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::StreamInstance<EID>& raw,
                                                                 YODA& db,
-                                                                const uint64_t initial_tick_wait_ms = 10000,
-                                                                const uint64_t tick_interval_ms = 1000,
+//                                                                const uint64_t initial_tick_wait_ms = 10000,
+//                                                                const uint64_t tick_interval_ms = 1000,
                                                                 int port = 0,
                                                                 const std::string& route = "") {
   // Maintain and report the state.
@@ -126,6 +126,7 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::Stream
     raw.Publish(eid);
   };
 
+  /*
   // Ensure that tick events are being sent periodically.
   struct TickSender {
     // One tick a minute by default. TODO(dkorolev): Make it parametric.
@@ -185,6 +186,7 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::Stream
       std::this_thread::sleep_for(std::chrono::milliseconds(tick_interval_ms));
     }
   });
+  */
 
   // Parse log events as JSON from standard input until EOF.
   std::string log_entry_as_string;
@@ -193,22 +195,30 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::Stream
   while (std::getline(std::cin, log_entry_as_string)) {
     try {
       ParseJSON(log_entry_as_string, log_entry);
-      try {
-        ParseJSON(log_entry.b, log_event);
-        const uint64_t timestamp = log_entry.t;
-        tick_sender.Relax(timestamp, true);
-        publish_f(make_unique<ENTRY_TYPE>(timestamp, std::move(log_event)));
-      } catch (const bricks::ParseJSONException&) {
-        // TODO(dkorolev): Error logging and stats over sliding windows.
+      const uint64_t timestamp = log_entry.t;
+      if (log_entry.m == "TICK") {
+        publish_f(make_unique<ENTRY_TYPE>(timestamp));
+      } else {
+        try {
+          ParseJSON(log_entry.b, log_event);
+          /*
+          tick_sender.Relax(timestamp, true);
+          */
+          publish_f(make_unique<ENTRY_TYPE>(timestamp, std::move(log_event)));
+        } catch (const bricks::ParseJSONException&) {
+          // TODO(dkorolev): Error logging and stats over sliding windows.
+        }
       }
     } catch (const bricks::ParseJSONException&) {
       // TODO(dkorolev): Error logging and stats over sliding windows.
     }
   }
 
+  /*
   // Graceful shutdown.
   stop_ticks = true;
   timer_thread.join();
+  */
 }
 
 #endif  // STDIN_PARSE_H

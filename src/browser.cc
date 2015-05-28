@@ -225,22 +225,22 @@ struct SmartSessionInfo {
       const std::string P = FLAGS_output_uri_prefix + FLAGS_route + "smart?html=" + (as_html ? "yes" : "");
 
       response.navigation.emplace_back(
-          Navigation{"Bring it on", P + Printf("&%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
+          Navigation{"Next", P + Printf("&%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
 
       response.navigation.emplace_back(
-          Navigation{"Filter out the (" + tags[0] + ", " + tags[1] + ") insights.",
+          Navigation{"Filter out insights on the same pair (" + tags[0] + ", " + tags[1] + ").",
                      P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_ab});
 
       response.navigation.emplace_back(
-          Navigation{"Filter out (" + tags[0] + ") insights.",
+          Navigation{"Filter out insights on A (" + tags[0] + ").",
                      P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a});
 
       response.navigation.emplace_back(
-          Navigation{"Filter out (" + tags[1] + ") insights.",
+          Navigation{"Filter out insights on B (" + tags[1] + ").",
                      P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_b});
 
       response.navigation.emplace_back(
-          Navigation{"Filter out all (" + tags[0] + ") and all (" + tags[1] + ") insights.",
+          Navigation{"Filter out insights on both A and B (" + tags[0] + " + " + tags[1] + ").",
                      P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a_b});
 
       // TODO(dkorolev): Add navigation over `info.history` here.
@@ -310,15 +310,15 @@ int main(int argc, char** argv) {
     if (id.empty()) {
       // Create new user session ID and redirect to it.
       const std::string fresh_id = RandomString();
+      const std::string P =
+        FLAGS_output_uri_prefix +
+        FLAGS_route + "smart?" +
+        FLAGS_id_key + '=' + fresh_id +
+        "&html=" +(as_html ? "yes" : "");
       r("",
         HTTPResponseCode.Found,
         "text/html",
-        HTTPHeaders({{"Location",
-                      Printf("%ssmart?%s=%s&html=%s",
-                             FLAGS_route.c_str(),
-                             FLAGS_id_key.c_str(),
-                             fresh_id.c_str(),
-                             as_html ? "yes" : "")}}));
+        HTTPHeaders({{"Location", P}}));
     } else {
       // Smart session browsing.
       SmartInsightResponse payload;
@@ -358,7 +358,7 @@ int main(int argc, char** argv) {
           TEXT("<hr>");
           {
             TEXT("<p align=center>");
-            A a({{"href", payload.insight.current_uri}});
+            A a({{"href", payload.insight.current_uri + "&html=yes"}});
             TEXT("[Not yet a] permalink to this insight.");
             TEXT("</p>");
           }

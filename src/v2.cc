@@ -367,7 +367,7 @@ struct Splitter {
                              realm.feature[feature].tag = feature;
                              realm.feature[feature].yes = "'" + feature + "'";
                              output_session.feature.emplace_back(feature);
-                             for (size_t c = 2; c <= counters.second; ++c) {
+                             for (size_t c = 2; c <= std::min(counters.second, static_cast<size_t>(10)); ++c) {
                                const std::string count_feature =
                                    Printf("%s>=%d", feature.c_str(), static_cast<int>(c));
                                output_session.feature.emplace_back(count_feature);
@@ -570,7 +570,11 @@ int main(int argc, char** argv) {
   // The rest of the logic is handled asynchronously, by the corresponding listeners.
   BlockingParseLogEventsAndInjectIdleEventsFromStandardInput<MidichloriansEvent,
                                                              MidichloriansEventWithTimestamp>(
-      raw, db, FLAGS_initial_tick_wait_ms, FLAGS_tick_interval_ms, FLAGS_port, FLAGS_route);
+      raw, db,
+      /*
+      FLAGS_initial_tick_wait_ms, FLAGS_tick_interval_ms,
+      */
+      FLAGS_port, FLAGS_route);
 
   // Production code should never reach this point.
   // For non-production code, print an explanatory message before terminating.
