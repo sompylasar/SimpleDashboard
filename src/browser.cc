@@ -278,7 +278,7 @@ int main(int argc, char** argv) {
           TR r({{"align", "center"}});
           if (one_based_index > 1) {
             TD d;
-            A a({{"hjref", FLAGS_route + "?id=" + ToString(one_based_index - 1) + "&html=yes"}});
+            A a({{"href", FLAGS_route + "?id=" + ToString(one_based_index - 1) + "&html=yes"}});
             TEXT("Previous insight");
           }
           if (one_based_index < input.insight.size()) {
