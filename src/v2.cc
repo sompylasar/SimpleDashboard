@@ -261,7 +261,7 @@ struct Splitter {
     HTTP(FLAGS_port).Register(FLAGS_route + "g", [this, &db](Request r) {
       const std::string& key = r.url.query["gid"];
       if (key.empty()) {
-        db.Transaction([&db](typename DB::T_DATA data) {
+        db.Transaction([](typename DB::T_DATA data) {
                          SessionsListPayload payload;
                          for (const auto cit : yoda::MatrixEntry<EventsByGID>::Accessor(data).Rows()) {
                            payload.sessions.push_back(FLAGS_output_uri_prefix + "/g?gid=" + cit.key());
@@ -273,7 +273,7 @@ struct Splitter {
       } else {
         const auto now_as_uint64 = static_cast<uint64_t>(Now());
         db.Transaction(
-            [key, now_as_uint64, &db](typename DB::T_DATA data) {
+            [key, now_as_uint64](typename DB::T_DATA data) {
               SessionDetailsPayload payload;
               try {
                 payload.up = FLAGS_output_uri_prefix + "/g";
@@ -329,7 +329,7 @@ struct Splitter {
 
     // Export data for insight generation.
     HTTP(FLAGS_port).Register(FLAGS_route + "i", [this, &db](Request r) {
-      db.Transaction([this, &db](typename DB::T_DATA data) {
+      db.Transaction([this](typename DB::T_DATA data) {
                        const std::vector<int> second_marks({5, 10, 15, 30, 60, 120, 300});
                        // Generate input data for insights.
                        InsightsInput payload;

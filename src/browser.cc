@@ -37,7 +37,7 @@ CEREAL_REGISTER_TYPE(insight::MutualInformation);
 
 DEFINE_int32(port, 3000, "Port to spawn the browser on.");
 DEFINE_string(route, "/", "The route to serve the browser on.");
-DEFINE_string(output_uri_prefix, "http://localhost:3000", "The prefix for the URI-s output by the server.");
+DEFINE_string(output_url_prefix, "http://localhost:3000", "The prefix for the URL-s output by the server.");
 
 DEFINE_string(input, "data/insights.json", "Path to the file containing the insights to browse.");
 DEFINE_string(id_key, "you_are_awesome", "The URL parameter name containing smart session token ID.");
@@ -57,37 +57,37 @@ std::string RandomString(const size_t length = 8) {
 }
 
 struct TopLevelResponse {
-  std::string SMART_HTML_BROWSE_URI;
-  std::string HTML_BROWSE_URI;
-  std::string SMART_BROWSE_URI;
+  std::string smart_html_browse_url_EXPERIMENTAL;
+  std::string html_browse_url_EXPERIMENTAL;
+  std::string smart_browse_url_INTERNAL;
   size_t total;
-  std::string browse_uri;
-  std::string browse_all_uri;
+  std::string browse_url;
+  std::string browse_all_url;
   TopLevelResponse(size_t i) : total(i) {
     if (total) {
-      const std::string P = FLAGS_output_uri_prefix + FLAGS_route;
-      SMART_BROWSE_URI = P + "smart";
-      HTML_BROWSE_URI = P + "?id=1&html=yes";
-      SMART_HTML_BROWSE_URI = P + "smart?html=yes";
-      browse_uri = P + "?id=1";
-      browse_all_uri = P + "?id=all";
+      const std::string url_prefix = FLAGS_output_url_prefix + FLAGS_route;
+      smart_browse_url_INTERNAL = url_prefix + "smart";
+      html_browse_url_EXPERIMENTAL = url_prefix + "?id=1&html=yes";
+      smart_html_browse_url_EXPERIMENTAL = url_prefix + "smart?html=yes";
+      browse_url = url_prefix + "?id=1";
+      browse_all_url = url_prefix + "?id=all";
     }
   }
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(SMART_HTML_BROWSE_URI),
-       CEREAL_NVP(HTML_BROWSE_URI),
-       CEREAL_NVP(SMART_BROWSE_URI),
+    ar(CEREAL_NVP(smart_html_browse_url_EXPERIMENTAL),
+       CEREAL_NVP(html_browse_url_EXPERIMENTAL),
+       CEREAL_NVP(smart_browse_url_INTERNAL),
        CEREAL_NVP(total),
-       CEREAL_NVP(browse_uri),
-       CEREAL_NVP(browse_all_uri));
+       CEREAL_NVP(browse_url),
+       CEREAL_NVP(browse_all_url));
   }
 };
 
 struct InsightResponse {
-  std::string current_uri;  // Permalink.
-  std::string prev_uri;
-  std::string next_uri;
+  std::string current_url;  // Permalink.
+  std::string previous_url;
+  std::string next_url;
   std::set<std::string> tags;
   double score;
   std::string description;
@@ -95,13 +95,13 @@ struct InsightResponse {
   InsightResponse() = default;
   InsightResponse(const InsightsOutput& input, size_t index) { Prepare(input, index); }
   void Prepare(const InsightsOutput& input, size_t index) {
-    const std::string P = FLAGS_output_uri_prefix + FLAGS_route;
-    current_uri = P + "?id=" + ToString(index + 1);  // It's 1-based in the URI.
+    const std::string url_prefix = FLAGS_output_url_prefix + FLAGS_route;
+    current_url = url_prefix + "?id=" + ToString(index + 1);  // It's 1-based in the URL.
     if (index) {
-      prev_uri = P + "?id=" + ToString(index);  // It's 1-based in the URI.
+      previous_url = url_prefix + "?id=" + ToString(index);  // It's 1-based in the URL.
     }
     if (index + 1 < input.insight.size()) {
-      next_uri = P + "?id=" + ToString(index + 2);  // It's 1-based in the URI.
+      next_url = url_prefix + "?id=" + ToString(index + 2);  // It's 1-based in the URL.
     }
     score = input.insight[index]->score;
     input.insight[index]->EnumerateFeatures([this, &input](const std::string& feature) {
@@ -115,9 +115,9 @@ struct InsightResponse {
   }
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(current_uri),
-       CEREAL_NVP(prev_uri),
-       CEREAL_NVP(next_uri),
+    ar(CEREAL_NVP(current_url),
+       CEREAL_NVP(previous_url),
+       CEREAL_NVP(next_url),
        CEREAL_NVP(tags),
        CEREAL_NVP(score),
        CEREAL_NVP(description),
@@ -129,10 +129,10 @@ typedef std::map<std::string, struct SmartSessionInfo> SmartSessionInfoMap;
 
 struct Navigation {
   std::string text;
-  std::string uri;
+  std::string url;
   template <typename A>
   void serialize(A& ar) {
-    ar(CEREAL_NVP(text), CEREAL_NVP(uri));
+    ar(CEREAL_NVP(text), CEREAL_NVP(url));
   }
 };
 
@@ -224,26 +224,27 @@ struct SmartSessionInfo {
       actions[action_a_b].insert(std::set<std::string>(tags.begin() + 1, tags.end()));
 
       // Populate the navigation links.
-      const std::string P = FLAGS_output_uri_prefix + FLAGS_route + "smart?html=" + (as_html ? "yes" : "");
+      const std::string url_prefix =
+          FLAGS_output_url_prefix + FLAGS_route + "smart?html=" + (as_html ? "yes" : "");
 
       response.navigation.emplace_back(
-          Navigation{"Next", P + Printf("&%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
+          Navigation{"Next", url_prefix + Printf("&%s=%s", FLAGS_id_key.c_str(), current_id_key.c_str())});
 
-      response.navigation.emplace_back(
-          Navigation{"Filter out insights on the same pair (" + tags[0] + ", " + tags[1] + ").",
-                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_ab});
+      response.navigation.emplace_back(Navigation{
+          "Filter out insights on the same pair (" + tags[0] + ", " + tags[1] + ").",
+          url_prefix + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_ab});
 
-      response.navigation.emplace_back(
-          Navigation{"Filter out insights on A (" + tags[0] + ").",
-                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a});
+      response.navigation.emplace_back(Navigation{
+          "Filter out insights on A (" + tags[0] + ").",
+          url_prefix + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a});
 
-      response.navigation.emplace_back(
-          Navigation{"Filter out insights on B (" + tags[1] + ").",
-                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_b});
+      response.navigation.emplace_back(Navigation{
+          "Filter out insights on B (" + tags[1] + ").",
+          url_prefix + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_b});
 
-      response.navigation.emplace_back(
-          Navigation{"Filter out insights on both A and B (" + tags[0] + " + " + tags[1] + ").",
-                     P + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a_b});
+      response.navigation.emplace_back(Navigation{
+          "Filter out insights on both A and B (" + tags[0] + " + " + tags[1] + ").",
+          url_prefix + Printf("&%s=%s&action=", FLAGS_id_key.c_str(), current_id_key.c_str()) + action_a_b});
 
       // TODO(dkorolev): Add navigation over `info.history` here.
     }
@@ -312,9 +313,9 @@ int main(int argc, char** argv) {
     if (id.empty()) {
       // Create new user session ID and redirect to it.
       const std::string fresh_id = RandomString();
-      const std::string P = FLAGS_output_uri_prefix + FLAGS_route + "smart?" + FLAGS_id_key + '=' + fresh_id +
-                            "&html=" + (as_html ? "yes" : "");
-      r("", HTTPResponseCode.Found, "text/html", HTTPHeaders({{"Location", P}}));
+      const std::string url_prefix = FLAGS_output_url_prefix + FLAGS_route + "smart?" + FLAGS_id_key + '=' +
+                                     fresh_id + "&html=" + (as_html ? "yes" : "");
+      r("", HTTPResponseCode.Found, "text/html", HTTPHeaders({{"Location", url_prefix}}));
     } else {
       // Smart session browsing.
       SmartInsightResponse payload;
@@ -341,20 +342,20 @@ int main(int argc, char** argv) {
         if (payload.done) {
           TEXT("<h1>You are awesome!</h1>");
           {
-            A a({{"href", FLAGS_output_uri_prefix + FLAGS_route + "smart?html=yes"}});
+            A a({{"href", FLAGS_output_url_prefix + FLAGS_route + "smart?html=yes"}});
             TEXT("Start over!");
           }
         } else {
           for (const auto& nav : payload.navigation) {
             TEXT("<p align=center>");
-            A a({{"href", nav.uri}});
+            A a({{"href", nav.url}});
             TEXT(nav.text);
             TEXT("</p>");
           }
           TEXT("<hr>");
           {
             TEXT("<p align=center>");
-            A a({{"href", payload.insight.current_uri + "&html=yes"}});
+            A a({{"href", payload.insight.current_url + "&html=yes"}});
             TEXT("[Not yet a] permalink to this insight.");
             TEXT("</p>");
           }
