@@ -28,8 +28,8 @@ SOFTWARE.
 #include "helpers.h"
 #include "html.h"
 
-#include "../../Current/Bricks/cerealize/cerealize.h"
-#include "../../Current/Bricks/strings/util.h"
+#include "../Current/Bricks/cerealize/cerealize.h"
+#include "../Current/Bricks/strings/util.h"
 
 // Tags group features into similar ones, for bulk filtering.
 struct TagInfo {

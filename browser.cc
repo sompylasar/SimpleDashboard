@@ -29,11 +29,11 @@ CEREAL_REGISTER_TYPE(insight::MutualInformation);
 
 #include "html.h"
 
-#include "../../Current/Bricks/dflags/dflags.h"
-#include "../../Current/Bricks/file/file.h"
-#include "../../Current/Bricks/net/api/api.h"
-#include "../../Current/Bricks/strings/util.h"
-#include "../../Current/Bricks/waitable_atomic/waitable_atomic.h"
+#include "../Current/Bricks/dflags/dflags.h"
+#include "../Current/Bricks/file/file.h"
+#include "../Current/Bricks/net/api/api.h"
+#include "../Current/Bricks/strings/util.h"
+#include "../Current/Bricks/waitable_atomic/waitable_atomic.h"
 
 DEFINE_int32(port, 3000, "Port to spawn the browser on.");
 DEFINE_string(route, "/", "The route to serve the browser on.");

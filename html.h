@@ -31,7 +31,7 @@ SOFTWARE.
 #include <utility>
 #include <initializer_list>
 
-#include "../../Current/Bricks/util/singleton.h"
+#include "../Current/Bricks/util/singleton.h"
 
 namespace html {
 

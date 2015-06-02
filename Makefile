@@ -17,14 +17,14 @@ ifeq ($(OS),Darwin)
   LDFLAGS+= -framework Foundation
 endif
 
-.PHONY: all clean update indent
+.PHONY: all clean update indent serve s browse b
 
 LOGS_FILENAME="/var/log/current.jsonlines"
 
 all: build build/browser build/gen_insights build/v2
 
 serve: build build/v2
-	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/v2 || echo "Build successful."
+	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/v2 --output_uri_prefix=http://localhost:3000 || echo "Build successful."
 
 s: serve
 
