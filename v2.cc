@@ -36,8 +36,7 @@ SOFTWARE.
 #include "../Current/Sherlock/yoda/yoda.h"
 
 // Structured iOS events structure to follow.
-#define COMPILE_MIDICHLORIANS_AS_SERVER_SIDE_CODE
-#include "../Current/Midichlorians/Dev/Beta/iOS/MidichloriansImpl.h"
+#include "../Current/Midichlorians/Dev/Beta/MidichloriansDataDictionary.h"
 
 DEFINE_int32(initial_tick_wait_ms, 1000, "");
 DEFINE_int32(tick_interval_ms, 100, "");
