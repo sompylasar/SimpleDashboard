@@ -48,7 +48,7 @@ update:
 	(cd .. ; git submodule update --init --recursive)
 
 indent:
-	../../Current/scripts/indent.sh
+	../Current/scripts/indent.sh
 
 check:
-	../../Current/scripts/check-all-headers.sh
+	../Current/scripts/check-all-headers.sh
