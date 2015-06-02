@@ -37,10 +37,11 @@ SOFTWARE.
 #include "types.h"
 #include "helpers.h"
 
-#include "../../Current/Bricks/template/metaprogramming.h"
 #include "../../Current/Bricks/dflags/dflags.h"
-#include "../../Current/Bricks/time/chrono.h"
 #include "../../Current/Bricks/strings/printf.h"
+#include "../../Current/Bricks/template/metaprogramming.h"
+#include "../../Current/Bricks/time/chrono.h"
+#include "../../Current/Bricks/waitable_atomic/waitable_atomic.h"
 #include "../../Current/Sherlock/sherlock.h"
 #include "../../Current/Sherlock/yoda/yoda.h"
 
@@ -74,8 +75,6 @@ struct State {
 template <typename HTTP_BODY_BASE_TYPE, typename ENTRY_TYPE, typename YODA>
 void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::StreamInstance<EID>& raw,
                                                                 YODA& db,
-                                                                const uint64_t initial_tick_wait_ms = 10000,
-                                                                const uint64_t tick_interval_ms = 1000,
                                                                 int port = 0,
                                                                 const std::string& route = "") {
   // Maintain and report the state.
@@ -125,66 +124,6 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::Stream
     raw.Publish(eid);
   };
 
-  // Ensure that tick events are being sent periodically.
-  struct TickSender {
-    // One tick a minute by default. TODO(dkorolev): Make it parametric.
-    uint64_t tick_frequency = 1000 * 60;
-    uint64_t last_tick_data = 0ull;
-    uint64_t last_tick_wall = 0ull;
-    bool caught_up = false;
-    mutable std::mutex mutex;
-
-    PUBLISH_F publish_f;
-    explicit TickSender(PUBLISH_F publish_f) : publish_f(publish_f) {}
-
-    void Relax(uint64_t t, bool force) {
-      std::lock_guard<std::mutex> guard(mutex);
-      const uint64_t w = static_cast<uint64_t>(bricks::time::Now());
-      assert(w >= last_tick_wall);
-      if (force) {
-        last_tick_wall = w;
-      } else {
-        if (!caught_up) {
-          if ((w - last_tick_wall) < 10 * 1000ull) {
-            // Do not start idle ticks until more than 10 seconds
-            // have passed since the last entry from stdin.
-            // Yes, this is a hack.
-            // TODO(dkorolev): Reconsider this logic one day.
-            return;
-          }
-          caught_up = true;
-        }
-        last_tick_wall = w;
-      }
-
-      if (!last_tick_data) {
-        last_tick_data = (t / tick_frequency) * tick_frequency;
-      }
-
-      if (t < last_tick_data) {
-        std::cerr << "Time went back from " << last_tick_data << " to " << t << " (by " << (last_tick_data - t)
-                  << " ms, force = " << force << ")" << std::endl;
-        ::exit(-1);
-      }
-
-      while (last_tick_data + tick_frequency < t) {
-        last_tick_data += tick_frequency;
-        publish_f(make_unique<ENTRY_TYPE>(last_tick_data));
-      }
-    }
-  };
-  TickSender tick_sender(publish_f);
-
-  // Send ticks events once in a while.
-  std::atomic_bool stop_ticks(false);
-  std::thread timer_thread([&tick_sender, &stop_ticks, &initial_tick_wait_ms, &tick_interval_ms]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(initial_tick_wait_ms));
-    while (!stop_ticks) {
-      tick_sender.Relax(static_cast<uint64_t>(bricks::time::Now()), false);
-      std::this_thread::sleep_for(std::chrono::milliseconds(tick_interval_ms));
-    }
-  });
-
   // Parse log events as JSON from standard input until EOF.
   std::string log_entry_as_string;
   LogEntry log_entry;
@@ -192,22 +131,21 @@ void BlockingParseLogEventsAndInjectIdleEventsFromStandardInput(sherlock::Stream
   while (std::getline(std::cin, log_entry_as_string)) {
     try {
       ParseJSON(log_entry_as_string, log_entry);
-      try {
-        ParseJSON(log_entry.b, log_event);
-        const uint64_t timestamp = log_entry.t;
-        tick_sender.Relax(timestamp, true);
-        publish_f(make_unique<ENTRY_TYPE>(timestamp, std::move(log_event)));
-      } catch (const bricks::ParseJSONException&) {
-        // TODO(dkorolev): Error logging and stats over sliding windows.
+      const uint64_t timestamp = log_entry.t;
+      if (log_entry.m == "TICK") {
+        publish_f(make_unique<ENTRY_TYPE>(timestamp));
+      } else {
+        try {
+          ParseJSON(log_entry.b, log_event);
+          publish_f(make_unique<ENTRY_TYPE>(timestamp, std::move(log_event)));
+        } catch (const bricks::ParseJSONException&) {
+          // TODO(dkorolev): Error logging and stats over sliding windows.
+        }
       }
     } catch (const bricks::ParseJSONException&) {
       // TODO(dkorolev): Error logging and stats over sliding windows.
     }
   }
-
-  // Graceful shutdown.
-  stop_ticks = true;
-  timer_thread.join();
 }
 
 #endif  // STDIN_PARSE_H

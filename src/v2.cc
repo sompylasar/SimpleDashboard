@@ -261,7 +261,7 @@ struct Splitter {
     HTTP(FLAGS_port).Register(FLAGS_route + "g", [this, &db](Request r) {
       const std::string& key = r.url.query["gid"];
       if (key.empty()) {
-        db.Transaction([&db](typename DB::T_DATA data) {
+        db.Transaction([](typename DB::T_DATA data) {
                          SessionsListPayload payload;
                          for (const auto cit : yoda::MatrixEntry<EventsByGID>::Accessor(data).Rows()) {
                            payload.sessions.push_back(FLAGS_output_uri_prefix + "/g?gid=" + cit.key());
@@ -273,7 +273,7 @@ struct Splitter {
       } else {
         const auto now_as_uint64 = static_cast<uint64_t>(Now());
         db.Transaction(
-            [key, now_as_uint64, &db](typename DB::T_DATA data) {
+            [key, now_as_uint64](typename DB::T_DATA data) {
               SessionDetailsPayload payload;
               try {
                 payload.up = FLAGS_output_uri_prefix + "/g";
@@ -329,58 +329,60 @@ struct Splitter {
 
     // Export data for insight generation.
     HTTP(FLAGS_port).Register(FLAGS_route + "i", [this, &db](Request r) {
-      db.Transaction(
-          [this, &db](typename DB::T_DATA data) {
-            const std::vector<int> second_marks({5, 10, 15, 30, 60, 120, 300});
-            // Generate input data for insights.
-            InsightsInput payload;
-            // Create one and only realm so far.
-            payload.realm.resize(payload.realm.size() + 1);
-            InsightsInput::Realm& realm = payload.realm.front();
-            // TODO(dkorolev): Bracketing, grouping, time windows.
-            realm.description = "One and only realm.";
-            // Explain time features.
-            realm.tag["T"].name = "Session length";
-            const auto& accessor = yoda::MatrixEntry<AggregatedSessionInfo>::Accessor(data);
-            for (const auto seconds : second_marks) {
-              auto& feature = realm.feature[Printf(">=%ds", seconds)];
-              feature.tag = "T";
-              feature.yes = Printf("%d seconds or longer", seconds);
-              feature.no = Printf("under %d seconds", seconds);
-            }
-            // Analyze individual sessions and export aggregated info about them.
-            for (const auto& sessions_per_group : accessor.Cols()) {
-              for (const auto& individual_session : sessions_per_group) {
-                // Emit the information about this session, in a way that makes it
-                // comparable with other sessions within the same realm.
-                realm.session.resize(realm.session.size() + 1);
-                InsightsInput::Session& output_session = realm.session.back();
-                output_session.key = individual_session.sid;
-                const int seconds = static_cast<int>(individual_session.number_of_seconds);
-                for (const auto t : second_marks) {
-                  if (seconds >= t) {
-                    output_session.feature.emplace_back(Printf(">=%ds", t));
-                  }
-                }
-                for (const auto& counters : individual_session.counters) {
-                  const std::string& feature = counters.first;
-                  realm.tag[feature].name = feature;
-                  realm.feature[feature].tag = feature;
-                  realm.feature[feature].yes = "'" + feature + "'";
-                  output_session.feature.emplace_back(feature);
-                  for (size_t c = 2; c <= counters.second; ++c) {
-                    const std::string count_feature = Printf("%s>=%d", feature.c_str(), static_cast<int>(c));
-                    output_session.feature.emplace_back(count_feature);
-                    realm.feature[count_feature].tag = feature;
-                    realm.feature[count_feature].yes =
-                        Printf("%d or more '%s'", static_cast<int>(c), feature.c_str());
-                  }
-                }
-              }
-            }
-            return payload;
-          },
-          std::move(r));
+      db.Transaction([this](typename DB::T_DATA data) {
+                       const std::vector<int> second_marks({5, 10, 15, 30, 60, 120, 300});
+                       // Generate input data for insights.
+                       InsightsInput payload;
+                       // Create one and only realm so far.
+                       payload.realm.resize(payload.realm.size() + 1);
+                       InsightsInput::Realm& realm = payload.realm.front();
+                       // TODO(dkorolev): Bracketing, grouping, time windows.
+                       realm.description = "One and only realm.";
+                       // Explain time features.
+                       realm.tag["T"].name = "Session length";
+                       const auto& accessor = yoda::MatrixEntry<AggregatedSessionInfo>::Accessor(data);
+                       for (const auto seconds : second_marks) {
+                         auto& feature = realm.feature[Printf(">=%ds", seconds)];
+                         feature.tag = "T";
+                         feature.yes = Printf("%d seconds or longer", seconds);
+                         feature.no = Printf("under %d seconds", seconds);
+                       }
+                       // Analyze individual sessions and export aggregated info about them.
+                       for (const auto& sessions_per_group : accessor.Cols()) {
+                         for (const auto& individual_session : sessions_per_group) {
+                           // Emit the information about this session, in a way that makes it
+                           // comparable with other sessions within the same realm.
+                           realm.session.resize(realm.session.size() + 1);
+                           InsightsInput::Session& output_session = realm.session.back();
+                           output_session.key = individual_session.sid;
+                           const int seconds = static_cast<int>(individual_session.number_of_seconds);
+                           for (const auto t : second_marks) {
+                             if (seconds >= t) {
+                               output_session.feature.emplace_back(Printf(">=%ds", t));
+                             }
+                           }
+                           for (const auto& counters : individual_session.counters) {
+                             const std::string& feature = counters.first;
+                             realm.tag[feature].name = feature;
+                             realm.feature[feature].tag = feature;
+                             realm.feature[feature].yes = "'" + feature + "'";
+                             output_session.feature.emplace_back(feature);
+                             for (size_t c = 2; c <= std::min(counters.second, static_cast<size_t>(10)); ++c) {
+                               const std::string count_feature =
+                                   Printf("%s>=%d", feature.c_str(), static_cast<int>(c));
+                               output_session.feature.emplace_back(count_feature);
+                               realm.feature[count_feature].tag = feature;
+                               realm.feature[count_feature].yes =
+                                   Printf("%d or more '%s'", static_cast<int>(c), feature.c_str());
+                               realm.feature[count_feature].no =
+                                   Printf("%d or less '%s'", static_cast<int>(c) - 1, feature.c_str());
+                             }
+                           }
+                         }
+                       }
+                       return payload;
+                     },
+                     std::move(r));
     });
   }
 
@@ -568,7 +570,7 @@ int main(int argc, char** argv) {
   // The rest of the logic is handled asynchronously, by the corresponding listeners.
   BlockingParseLogEventsAndInjectIdleEventsFromStandardInput<MidichloriansEvent,
                                                              MidichloriansEventWithTimestamp>(
-      raw, db, FLAGS_initial_tick_wait_ms, FLAGS_tick_interval_ms, FLAGS_port, FLAGS_route);
+      raw, db, FLAGS_port, FLAGS_route);
 
   // Production code should never reach this point.
   // For non-production code, print an explanatory message before terminating.

@@ -21,8 +21,17 @@ endif
 
 LOGS_FILENAME="/var/log/current.jsonlines"
 
-all: build/gen_insights build/v2
+all: build build/browser build/gen_insights build/v2
+
+serve: build build/v2
 	[ -f ${LOGS_FILENAME} ] && tail -n +1 -f ${LOGS_FILENAME} | ./build/v2 || echo "Build successful."
+
+s: serve
+
+browse: build build/browser
+	./build/browser
+
+b: browse
 
 build/v2: build v2.cc
 
