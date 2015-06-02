@@ -28,19 +28,16 @@ SOFTWARE.
 #include "stdin_parse.h"
 #include "insights.h"
 
-#include "../../Current/Bricks/dflags/dflags.h"
-#include "../../Current/Bricks/strings/util.h"
-#include "../../Current/Bricks/template/metaprogramming.h"
-#include "../../Current/Bricks/waitable_atomic/waitable_atomic.h"
-#include "../../Current/Sherlock/sherlock.h"
-#include "../../Current/Sherlock/yoda/yoda.h"
+#include "../Current/Bricks/dflags/dflags.h"
+#include "../Current/Bricks/strings/util.h"
+#include "../Current/Bricks/template/metaprogramming.h"
+#include "../Current/Bricks/waitable_atomic/waitable_atomic.h"
+#include "../Current/Sherlock/sherlock.h"
+#include "../Current/Sherlock/yoda/yoda.h"
 
 // Structured iOS events structure to follow.
-#define COMPILE_MIDICHLORIANS_AS_SERVER_SIDE_CODE
-#include "../MidichloriansBeta/Current/Midichlorians.h"
+#include "../Current/Midichlorians/Dev/Beta/MidichloriansDataDictionary.h"
 
-DEFINE_int32(initial_tick_wait_ms, 1000, "");
-DEFINE_int32(tick_interval_ms, 100, "");
 DEFINE_int32(port, 3000, "Port to spawn the dashboard on.");
 DEFINE_string(route, "/", "The route to serve the dashboard on.");
 DEFINE_string(output_uri_prefix, "http://localhost", "The prefix for the URI-s output by the server.");

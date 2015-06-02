@@ -29,9 +29,9 @@ SOFTWARE.
 #include "insights.h"
 CEREAL_REGISTER_TYPE(insight::MutualInformation);
 
-#include "../../Current/Bricks/dflags/dflags.h"
-#include "../../Current/Bricks/file/file.h"
-#include "../../Current/Bricks/strings/util.h"
+#include "../Current/Bricks/dflags/dflags.h"
+#include "../Current/Bricks/file/file.h"
+#include "../Current/Bricks/strings/util.h"
 
 using bricks::FileSystem;
 using namespace bricks::strings;
