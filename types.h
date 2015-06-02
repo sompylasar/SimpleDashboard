@@ -30,8 +30,6 @@ SOFTWARE.
 #include "../Current/Bricks/template/metaprogramming.h"
 #include "../Current/Sherlock/yoda/yoda.h"
 
-// Structured iOS events structure to follow.
-#define COMPILE_MIDICHLORIANS_AS_SERVER_SIDE_CODE
 #include "../Current/Midichlorians/Dev/Beta/iOS/MidichloriansImpl.h"
 
 // `EID`, "Event ID", is a monotonically increasing microsecond timestamp,
