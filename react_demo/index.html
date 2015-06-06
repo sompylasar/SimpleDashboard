@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>PAGE_TITLE</title>
+  </head>
+  <body>
+    <div id="c5t-root">Loading...</div>
+    <script src="./vendor/react-0.13.3-build/react.js"></script>
+    <script src="./vendor/react-0.13.3-build/JSXTransformer.js"></script>
+    <script type="text/jsx" src="./src/InsightsNavigation.jsx"></script>
+    <script type="text/jsx" src="./src/MutualInformationInsightsVisualizer.jsx"></script>
+    <script type="text/jsx" src="./src/InsightsBrowser.jsx"></script>
+    <script type="text/jsx">
+      ;(function () {
+        var DATA_JSON;
+
+        // TODO(dkorolev): Remove the sample data below.
+        DATA_JSON = {"data":{"current_url":"http://localhost:3000/?id=2129","previous_url":"http://localhost:3000/?id=2128","next_url":"http://localhost:3000/?id=2130","tags":["DaysInterval","HasUserLicense"],"score":12.479937347879673,"description":"WE HAZ INSIGHTS!","insight":{"polymorphic_id":2147483649,"polymorphic_name":"insight::MutualInformation","ptr_wrapper":{"valid":1,"data":{"score":12.479937347879673,"lhs":"HasUserLicense","rhs":"DaysInterval>=6","counters":{"N":130969,"lhs":118,"rhs":65831,"nn":65111,"ny":65740,"yn":27,"yy":91}}}}}};
+
+        // TODO(dkorolev): Replace the `DATA_JSON` below with the server-side JSON.
+        var data = DATA_JSON;
+
+        React.render(
+          <InsightsBrowser data={data} />,
+          document.getElementById('c5t-root')
+        );
+      }());
+    </script>
+  </body>
+</html>
